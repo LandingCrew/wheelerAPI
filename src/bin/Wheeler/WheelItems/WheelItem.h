@@ -34,6 +34,9 @@ public:
 	virtual void SerializeIntoJsonObj(nlohmann::json& a_json);
 	static std::shared_ptr<WheelItem> SerializeFromJsonObj(nlohmann::json& a_json);
 
+	// API: Get the form ID of the underlying game form, or 0 if not applicable
+	virtual RE::FormID GetFormID() const { return 0; }
+
 	static inline const char* ITEM_TYPE_STR = "WheelItem";
 
 

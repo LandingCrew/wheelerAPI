@@ -43,8 +43,10 @@ public:
 	/// <summary>
 	/// Draw the content in slot and (if applicable) highlight region of this wheel entry.
 	/// This function should be called after DrawBackGround to prevent background from being drawn over the content.
-	/// </summary> 
-	void DrawSlotAndHighlight(ImVec2 a_wheelCenter, ImVec2 a_entryCenter, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs);
+	/// </summary>
+	/// <param name="a_wheelIndex">Index of the wheel (for subtext lookup)</param>
+	/// <param name="a_entryIndex">Index of this entry (for subtext lookup)</param>
+	void DrawSlotAndHighlight(ImVec2 a_wheelCenter, ImVec2 a_entryCenter, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs, int32_t a_wheelIndex = -1, int32_t a_entryIndex = -1);
 
 	/// <summary>
 	/// Get the radius changes made by arcRadiusIncInterpolator. Use this function to calculate the offset of item center.
@@ -91,13 +93,22 @@ public:
 	bool IsEmpty();
 	int GetNumItems();
 
+	// API access - returns nullptr if index out of range
+	WheelItem* GetItem(int a_index);
+
+	// Remove item at index - returns true if successful
+	bool RemoveItemAt(int a_index);
+
+	// Clear all items
+	void ClearItems();
+
     void SerializeIntoJsonObj(nlohmann::json& a_json);
 	static std::unique_ptr<WheelEntry> SerializeFromJsonObj(const nlohmann::json& a_json, SKSE::SerializationInterface* a_intfc);
 
 	void ResetAnimation();
 
 private:
-	void drawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs);
+	void drawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs, int32_t a_wheelIndex = -1, int32_t a_entryIndex = -1);
 	void drawHighlight(ImVec2 a_center, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs);
 	
 	bool _prevHovered = false;  // used to detect when the mouse enters the entry

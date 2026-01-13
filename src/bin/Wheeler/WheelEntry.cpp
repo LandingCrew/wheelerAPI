@@ -5,6 +5,7 @@
 #include "WheelItems/WheelItemMutable.h"
 #include "WheelEntry.h"
 #include "WheelItems/WheelItemShout.h"
+#include "bin/API/WheelerAPI.h"
 void WheelEntry::UpdateAnimation(RE::TESObjectREFR::InventoryItemMap& imap, float innerSpacingRad, float entryInnerAngleMin, float entryInnerAngleMax, float entryOuterAngleMin, float entryOuterAngleMax, bool hovered)
 {
 	using namespace Config::Styling::Wheel;
@@ -92,14 +93,14 @@ void WheelEntry::DrawBackGround(
 	
 }
 
-void WheelEntry::DrawSlotAndHighlight(ImVec2 a_wheelCenter, ImVec2 a_entryCenter, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs)
+void WheelEntry::DrawSlotAndHighlight(ImVec2 a_wheelCenter, ImVec2 a_entryCenter, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs, int32_t a_wheelIndex, int32_t a_entryIndex)
 {
 	try {
 
 		if (a_hovered) {
 			this->drawHighlight(a_wheelCenter, a_imap, a_drawArgs);
 		}
-		this->drawSlot(a_entryCenter, a_hovered, a_imap, a_drawArgs);
+		this->drawSlot(a_entryCenter, a_hovered, a_imap, a_drawArgs, a_wheelIndex, a_entryIndex);
 	} catch (std::exception& e) {
 		logger::error("Exception in WheelEntry::DrawSlotAndHighlight: {}", e.what());
 	}
@@ -144,7 +145,7 @@ void WheelEntry::drawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::In
 	}
 }
 */
-void WheelEntry::drawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs)
+void WheelEntry::drawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs, int32_t a_wheelIndex, int32_t a_entryIndex)
 {
 	try {
 		std::shared_lock<std::shared_mutex> lock(this->_lock);
@@ -185,6 +186,17 @@ void WheelEntry::drawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::In
 
 		//绘制slot
 		_items[_selectedItem]->DrawSlot(a_center, a_hovered, a_imap, a_drawArgs);
+
+		// Draw subtext if set for this entry (API v2 feature)
+		if (a_wheelIndex >= 0 && a_entryIndex >= 0) {
+			auto subtextInfo = WheelerAPI::GetEntrySubtextInfo(a_wheelIndex, a_entryIndex);
+			if (subtextInfo.hasSubtext) {
+				float subtextX = a_center.x + subtextInfo.offsetX;
+				float subtextY = a_center.y + subtextInfo.offsetY;
+				Drawer::draw_text(subtextX, subtextY, subtextInfo.text.c_str(),
+					subtextInfo.color, subtextInfo.fontSize, a_drawArgs);
+			}
+		}
 	} catch (const std::exception& e) {
 		logger::error("Exception in WheelEntry::drawSlot: {}", e.what());
 	}
@@ -344,6 +356,37 @@ int WheelEntry::GetNumItems()
 	return this->_items.size();
 }
 
+WheelItem* WheelEntry::GetItem(int a_index)
+{
+	std::shared_lock<std::shared_mutex> lock(this->_lock);
+	if (a_index < 0 || a_index >= static_cast<int>(this->_items.size())) {
+		return nullptr;
+	}
+	return this->_items[a_index].get();
+}
+
+bool WheelEntry::RemoveItemAt(int a_index)
+{
+	std::unique_lock<std::shared_mutex> lock(this->_lock);
+	if (a_index < 0 || a_index >= static_cast<int>(this->_items.size())) {
+		return false;
+	}
+	this->_items.erase(this->_items.begin() + a_index);
+	// Adjust selected item if needed
+	if (a_index < _selectedItem && _selectedItem > 0) {
+		_selectedItem--;
+	} else if (_selectedItem >= static_cast<int>(this->_items.size()) && !this->_items.empty()) {
+		_selectedItem = static_cast<int>(this->_items.size()) - 1;
+	}
+	return true;
+}
+
+void WheelEntry::ClearItems()
+{
+	std::unique_lock<std::shared_mutex> lock(this->_lock);
+	this->_items.clear();
+	this->_selectedItem = 0;
+}
 
 WheelEntry::WheelEntry()
 {

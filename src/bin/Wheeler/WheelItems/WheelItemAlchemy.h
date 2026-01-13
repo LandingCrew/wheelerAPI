@@ -20,7 +20,8 @@ public:
 	virtual void ActivateItemSpecial() override;
 	
 	virtual void SerializeIntoJsonObj(nlohmann::json& a_json) override;
-	
+	virtual RE::FormID GetFormID() const override { return _alchemyItem ? _alchemyItem->GetFormID() : 0; }
+
 	static inline const char* ITEM_TYPE_STR = "WheelItemAlchemy";
 
 private:

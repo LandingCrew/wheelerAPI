@@ -19,4 +19,14 @@ public:
 	/// </summary>
 	/// <returns>Created item, or null if no item is applicable.</returns>
 	static std::shared_ptr<WheelItem> MakeWheelItemFromJsonObject(nlohmann::json a_json, SKSE::SerializationInterface* a_intfc);
+
+	/// <summary>
+	/// Creates a new wheel item from a FormID.
+	/// For weapons/armor, uniqueID is required to identify the specific inventory item.
+	/// Returns nullptr if form not found or form type is unsupported.
+	/// </summary>
+	/// <param name="a_formID">The FormID of the game form</param>
+	/// <param name="a_uniqueID">UniqueID for weapons/armor (ignored for other types)</param>
+	/// <returns>Created item, or null if not applicable.</returns>
+	static std::shared_ptr<WheelItem> MakeWheelItemFromFormID(RE::FormID a_formID, uint16_t a_uniqueID = 0);
 };

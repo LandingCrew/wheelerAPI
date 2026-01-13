@@ -17,7 +17,7 @@ void WheelItemMutable::SetUniqueID(uint16_t a_id)
 	this->_uniqueID = a_id;
 }
 
-RE::FormID WheelItemMutable::GetFormID()
+RE::FormID WheelItemMutable::GetFormID() const
 {
 	return this->_obj->GetFormID();
 }

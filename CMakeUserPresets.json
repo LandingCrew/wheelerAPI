@@ -1,0 +1,15 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "vs2022-windows-user",
+      "inherits": "vs2022-windows",
+      "cacheVariables": {
+        "CompiledPluginsPath": {
+          "type": "PATH",
+          "value": "F:/Modlists/LoreRim/overwrite"
+        }
+      }
+    }
+  ]
+}

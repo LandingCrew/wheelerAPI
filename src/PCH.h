@@ -43,6 +43,20 @@ namespace std
 
 #define RELOCATION_OFFSET(SE, AE) REL::VariantOffset(SE, AE, 0).offset()
 
+// Logging macros - CommonLibSSE NG 3.7.0 removed these
+#define INFO(...)     logger::info(__VA_ARGS__)
+#define ERROR(...)    logger::error(__VA_ARGS__)
+#define WARN(...)     logger::warn(__VA_ARGS__)
+#define DEBUG(...)    logger::debug(__VA_ARGS__)
+#define TRACE(...)    logger::trace(__VA_ARGS__)
+#define CRITICAL(...) logger::critical(__VA_ARGS__)
+#define ASSERT(condition) \
+    do { \
+        if (!(condition)) { \
+            logger::critical("Assertion failed: " #condition); \
+        } \
+    } while (0)
+
 #include "Plugin.h"
 #include <d3d11.h>
 #include <dxgi.h>

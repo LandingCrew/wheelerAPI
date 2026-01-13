@@ -254,6 +254,97 @@ std::shared_ptr<WheelItem> WheelItemFactory::MakeWheelItemFromJsonObject(nlohman
 	catch (std::exception exception) {
 		INFO("Exception when de-serializing wheel item: {}", exception.what());
 	}
-	
+
+	return nullptr;
+}
+
+std::shared_ptr<WheelItem> WheelItemFactory::MakeWheelItemFromFormID(RE::FormID a_formID, uint16_t a_uniqueID)
+{
+	RE::TESForm* form = RE::TESForm::LookupByID(a_formID);
+	if (!form) {
+		return nullptr;
+	}
+
+	try {
+		switch (form->GetFormType()) {
+		case RE::FormType::Weapon:
+		{
+			RE::TESObjectWEAP* weap = form->As<RE::TESObjectWEAP>();
+			if (!weap || a_uniqueID == 0) {
+				return nullptr;  // Weapons require uniqueID
+			}
+			return WheelItemMutable::CreateWheelItemMutable<WheelItemWeapon>(weap, a_uniqueID);
+		}
+		case RE::FormType::Armor:
+		{
+			RE::TESObjectARMO* armor = form->As<RE::TESObjectARMO>();
+			if (!armor || a_uniqueID == 0) {
+				return nullptr;  // Armor requires uniqueID
+			}
+			return WheelItemMutable::CreateWheelItemMutable<WheelItemArmor>(armor, a_uniqueID);
+		}
+		case RE::FormType::Spell:
+		{
+			RE::SpellItem* spell = form->As<RE::SpellItem>();
+			if (!spell) {
+				return nullptr;
+			}
+			return std::make_shared<WheelItemSpell>(spell);
+		}
+		case RE::FormType::Shout:
+		{
+			RE::TESShout* shout = form->As<RE::TESShout>();
+			if (!shout) {
+				return nullptr;
+			}
+			return std::make_shared<WheelItemShout>(shout);
+		}
+		case RE::FormType::Light:
+		{
+			RE::TESObjectLIGH* light = form->As<RE::TESObjectLIGH>();
+			if (!light || !light->CanBeCarried()) {
+				return nullptr;
+			}
+			return std::make_shared<WheelItemLight>(light);
+		}
+		case RE::FormType::Ammo:
+		{
+			RE::TESAmmo* ammo = form->As<RE::TESAmmo>();
+			if (!ammo) {
+				return nullptr;
+			}
+			return std::make_shared<WheelItemAmmo>(ammo);
+		}
+		case RE::FormType::AlchemyItem:
+		{
+			RE::AlchemyItem* alchemyItem = form->As<RE::AlchemyItem>();
+			if (!alchemyItem) {
+				return nullptr;
+			}
+			return std::make_shared<WheelItemAlchemy>(alchemyItem);
+		}
+		case RE::FormType::Scroll:
+		{
+			RE::ScrollItem* scrollItem = form->As<RE::ScrollItem>();
+			if (!scrollItem) {
+				return nullptr;
+			}
+			return std::make_shared<WheelItemScroll>(scrollItem);
+		}
+		case RE::FormType::Misc:
+		{
+			RE::TESObjectMISC* miscObj = form->As<RE::TESObjectMISC>();
+			if (!miscObj) {
+				return nullptr;
+			}
+			return std::make_shared<WheelItemMisc>(miscObj);
+		}
+		default:
+			return nullptr;
+		}
+	} catch (std::exception& e) {
+		INFO("Exception when creating wheel item from FormID: {}", e.what());
+	}
+
 	return nullptr;
 }

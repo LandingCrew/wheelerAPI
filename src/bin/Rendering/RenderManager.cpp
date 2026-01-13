@@ -47,16 +47,16 @@ void RenderManager::D3DInitHook::thunk()
 	func();
 
 	INFO("RenderManager: Initializing...");
-	auto render_manager = RE::BSRenderManager::GetSingleton();
-	if (!render_manager) {
+	auto* renderer = RE::BSGraphics::Renderer::GetSingleton();
+	if (!renderer) {
 		ERROR("Cannot find render manager. Initialization failed!");
 		return;
 	}
 
-	auto render_data = render_manager->GetRuntimeData();
+	auto& render_data = renderer->data;
 
 	INFO("Getting swapchain...");
-	auto swapchain = render_data.swapChain;
+	auto* swapchain = render_data.renderWindows[0].swapChain;
 	if (!swapchain) {
 		ERROR("Cannot find swapchain. Initialization failed!");
 		return;

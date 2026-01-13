@@ -27,7 +27,7 @@ class WheelItemMutable : public WheelItem
 public:
 	uint16_t GetUniqueID();
 	void SetUniqueID(uint16_t a_id);
-	RE::FormID GetFormID();
+	RE::FormID GetFormID() const override;
 
 	/// <summary>
 	/// Creates a WheelItemMutable object of type T, which must be a subclass of WheelItemMutable.

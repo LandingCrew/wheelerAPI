@@ -5,6 +5,7 @@
 #include "imgui.h"
 
 #include "bin/Config.h"
+#include "bin/API/WheelerAPI.h"
 #include "Wheel.h"
 class Wheeler
 {
@@ -13,6 +14,7 @@ public:
 	{
 		// insert an empty wheel
 		_wheels.emplace_back(std::make_unique<Wheel>());
+		WheelerAPI::SetInitialized(true);
 	}
 
 	/// <summary>
@@ -140,6 +142,34 @@ public:
 	/// </summary>
 	static void SetupDefaultWheels();
 
+	// ============================================================================
+	// External API Accessors
+	// These methods provide access to internal state for the WheelerAPI.
+	// They do NOT acquire locks - callers must handle synchronization.
+	// ============================================================================
+	
+	/// <summary>
+	/// Get direct access to the wheels vector for API use.
+	/// Caller must hold appropriate lock.
+	/// </summary>
+	static std::vector<std::unique_ptr<Wheel>>& GetWheels() { return _wheels; }
+	
+	/// <summary>
+	/// Get reference to the wheel data lock for API synchronization.
+	/// </summary>
+	static std::shared_mutex& GetWheelDataLock() { return _wheelDataLock; }
+	
+	/// <summary>
+	/// Get a wheel by index. Returns nullptr if out of range.
+	/// Caller must hold appropriate lock.
+	/// </summary>
+	static Wheel* GetWheelByIndex(int a_index);
+	
+	/// <summary>
+	/// Get the total number of wheels.
+	/// </summary>
+	static int GetWheelCount() { return static_cast<int>(_wheels.size()); }
+
 private:
 	enum class WheelState
 	{
@@ -181,4 +211,3 @@ private:
 
 	static float getCursorRadiusMax();
 };
-

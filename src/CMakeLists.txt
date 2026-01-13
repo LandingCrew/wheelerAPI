@@ -83,6 +83,12 @@ target_include_directories(
 		"${SOURCE_DIR}"
 )
 
+target_compile_definitions(
+	"${PROJECT_NAME}"
+	PRIVATE
+		WHEELER_EXPORTS
+)
+
 set(SKSE_SUPPORT_XBYAK ON)
 
 add_subdirectory("$ENV{CommonLibSSEPath_NG}" CommonLibSSE EXCLUDE_FROM_ALL)

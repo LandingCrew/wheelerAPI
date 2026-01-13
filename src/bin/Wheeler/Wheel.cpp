@@ -10,7 +10,7 @@ Wheel::~Wheel()
     this->Clear();
 }
 void Wheel::Draw(ImVec2 a_wheelCenter, float a_cursorAngle, bool a_cursorCentered, RE::TESObjectREFR::InventoryItemMap& a_imap,
-	DrawArgs a_drawArgs)
+	DrawArgs a_drawArgs, int32_t a_wheelIndex)
 {
 	try {
 		using namespace Config::Styling::Wheel;
@@ -123,7 +123,7 @@ void Wheel::Draw(ImVec2 a_wheelCenter, float a_cursorAngle, bool a_cursorCentere
 
 		// draw foreground in a separate pass to avoid overlapping
 		for (int entryIdx = 0; entryIdx < entryRuntimeDataVec.size(); entryIdx++) {
-			_entries[entryIdx]->DrawSlotAndHighlight(a_wheelCenter, entryRuntimeDataVec[entryIdx].first, entryRuntimeDataVec[entryIdx].second, a_imap, a_drawArgs);
+			_entries[entryIdx]->DrawSlotAndHighlight(a_wheelCenter, entryRuntimeDataVec[entryIdx].first, entryRuntimeDataVec[entryIdx].second, a_imap, a_drawArgs, a_wheelIndex, entryIdx);
 		}
 
 		// draw cursor indicator
@@ -286,4 +286,34 @@ void Wheel::SetHoveredEntryIndex(int a_index)
 int Wheel::GetNumEntries()
 {
 	return this->_entries.size();
+}
+
+WheelEntry* Wheel::GetEntry(int a_index)
+{
+	std::shared_lock<std::shared_mutex> lock(_lock);
+	if (a_index < 0 || a_index >= static_cast<int>(this->_entries.size())) {
+		return nullptr;
+	}
+	return this->_entries[a_index].get();
+}
+
+bool Wheel::RemoveEntry(int a_index)
+{
+	std::unique_lock<std::shared_mutex> lock(_lock);
+	if (a_index < 0 || a_index >= static_cast<int>(this->_entries.size())) {
+		return false;
+	}
+	this->_entries.erase(this->_entries.begin() + a_index);
+	// Adjust hovered entry if needed
+	if (a_index < _hoveredEntryIdx && _hoveredEntryIdx > 0) {
+		_hoveredEntryIdx--;
+	} else if (_hoveredEntryIdx >= static_cast<int>(this->_entries.size()) && !this->_entries.empty()) {
+		_hoveredEntryIdx = static_cast<int>(this->_entries.size()) - 1;
+	}
+	return true;
+}
+
+int Wheel::GetHoveredEntryIndex() const
+{
+	return _hoveredEntryIdx;
 }

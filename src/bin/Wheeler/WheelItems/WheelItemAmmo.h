@@ -14,6 +14,7 @@ public:
 	virtual void ActivateItemPrimary() override;
 
 	virtual void SerializeIntoJsonObj(nlohmann::json& a_json) override;
+	virtual RE::FormID GetFormID() const override { return _ammo ? _ammo->GetFormID() : 0; }
 
 	static inline const char* ITEM_TYPE_STR = "WheelItemAmmo";
 

@@ -40,14 +40,14 @@ Texture::Image Texture::GetIconImage(icon_image_type a_imageType, RE::TESForm* a
 bool Texture::load_texture_from_file(const char* filename, ID3D11ShaderResourceView** out_srv, int& out_width, int& out_height)
 {
 	ASSERT(device_ != nullptr);
-	auto* render_manager = RE::BSRenderManager::GetSingleton();
-	if (!render_manager) {
+	auto* renderer = RE::BSGraphics::Renderer::GetSingleton();
+	if (!renderer) {
 		logger::error("Cannot find render manager. Initialization failed."sv);
 		return false;
 	}
 
-	auto [forwarder, context, unk58, unk60, unk68, swapChain, unk78, unk80, renderView, resourceView] =
-		render_manager->GetRuntimeData();
+	auto& render_data = renderer->data;
+	auto* forwarder = render_data.forwarder;
 
 	// Load from disk into a raw RGBA buffer
 	auto* svg = nsvgParseFromFile(filename, "px", 96.0f);

@@ -9,8 +9,8 @@ public:
     Wheel();
     ~Wheel();
 
-	void Draw(ImVec2 a_wheelCenter, float a_cursorAngle, bool a_cursorCentered, RE::TESObjectREFR::InventoryItemMap& a_imap, 
-		DrawArgs a_drawArgs);
+	void Draw(ImVec2 a_wheelCenter, float a_cursorAngle, bool a_cursorCentered, RE::TESObjectREFR::InventoryItemMap& a_imap,
+		DrawArgs a_drawArgs, int32_t a_wheelIndex = -1);
 		
 
     void Clear();
@@ -47,6 +47,15 @@ public:
 	static std::unique_ptr<Wheel> SerializeFromJsonObj(const nlohmann::json& a_json, SKSE::SerializationInterface* a_intfc);
 	
 	int GetNumEntries();
+
+	// API access - returns nullptr if index out of range
+	WheelEntry* GetEntry(int a_index);
+
+	// API access - remove entry at index, returns true if successful
+	bool RemoveEntry(int a_index);
+
+	// API access - get currently hovered entry index (-1 if none)
+	int GetHoveredEntryIndex() const;
 
 private:
     std::vector<std::unique_ptr<WheelEntry>> _entries = {};

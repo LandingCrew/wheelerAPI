@@ -127,13 +127,15 @@ void Wheeler::Update(float a_deltaTime)
 			Drawer::draw_text(wheelCenter.x, wheelCenter.y, Texts::GetText(Texts::TextType::NoWheelPresent), C_SKYRIMWHITE, 40.F, drawArgs);
 		} else {
 			bool isCursorCentered = _cursorPos.x == 0 && _cursorPos.y == 0;
-			_wheels[_activeWheelIdx]->Draw(wheelCenter, cursorAngle, isCursorCentered, inv, drawArgs);
+			_wheels[_activeWheelIdx]->Draw(wheelCenter, cursorAngle, isCursorCentered, inv, drawArgs, static_cast<int32_t>(_activeWheelIdx));
 		}
 
 
 		// draw wheel indicator
 		for (int i = 0; i < _wheels.size(); i++) {
 			bool isWheelActive = i == _activeWheelIdx;
+			auto managedStyling = WheelerAPI::GetManagedWheelStyling(static_cast<int32_t>(i));
+			bool isManaged = managedStyling.isValid;
 			ImVec2 wheelIndicatorPos = { wheelCenter.x + Config::Styling::Wheel::WheelIndicatorOffsetX + i * Config::Styling::Wheel::WheelIndicatorSpacing,
 				wheelCenter.y + Config::Styling::Wheel::WheelIndicatorOffsetY };
 			if (Config::Styling::Wheel::WheelIndicatorAlignment == Config::WidgetAlignment::kCenter) {  // offset from center
@@ -145,12 +147,42 @@ void Wheeler::Update(float a_deltaTime)
 					0, 0,
 					{ Config::Styling::Wheel::WheelIndicatorSize, Config::Styling::Wheel::WheelIndicatorSize },
 					C_SKYRIMWHITE, drawArgs);
+				// Draw indicator overlay for managed wheels (texture mode)
+				if (isManaged && !managedStyling.indicatorText.empty()) {
+					Drawer::draw_text(wheelIndicatorPos.x, wheelIndicatorPos.y, managedStyling.indicatorText.c_str(),
+						isWheelActive ? managedStyling.indicatorActiveColor : managedStyling.indicatorInactiveColor,
+						Config::Styling::Wheel::WheelIndicatorSize * 1.5f, drawArgs);
+				}
 			} else {
+				// Use different color for managed wheels
+				ImU32 indicatorColor;
+				if (isManaged) {
+					indicatorColor = isWheelActive ? managedStyling.indicatorActiveColor : managedStyling.indicatorInactiveColor;
+				} else {
+					indicatorColor = isWheelActive ? Config::Styling::Wheel::WheelIndicatorActiveColor : Config::Styling::Wheel::WheelIndicatorInactiveColor;
+				}
 				Drawer::draw_circle_filled(
 					wheelIndicatorPos,
 					Config::Styling::Wheel::WheelIndicatorSize / 2,
-					isWheelActive ? Config::Styling::Wheel::WheelIndicatorActiveColor : Config::Styling::Wheel::WheelIndicatorInactiveColor,
+					indicatorColor,
 					10, drawArgs);
+				// Draw indicator overlay for managed wheels (geometric mode)
+				if (isManaged && !managedStyling.indicatorText.empty()) {
+					Drawer::draw_text(wheelIndicatorPos.x, wheelIndicatorPos.y, managedStyling.indicatorText.c_str(),
+						IM_COL32(0, 0, 0, 255),  // Black text for contrast on colored circle
+						Config::Styling::Wheel::WheelIndicatorSize * 1.25f, drawArgs);
+				}
+			}
+		}
+
+		// Draw client name label if active wheel is managed and label is enabled
+		if (WheelerAPI::ShouldShowManagedWheelLabel(static_cast<int32_t>(_activeWheelIdx))) {
+			auto styling = WheelerAPI::GetManagedWheelStyling(static_cast<int32_t>(_activeWheelIdx));
+			std::string clientName = WheelerAPI::GetManagedWheelClientNameSafe(static_cast<int32_t>(_activeWheelIdx));
+			if (!clientName.empty() && styling.isValid) {
+				ImVec2 labelPos = { wheelCenter.x, wheelCenter.y + Config::Styling::Wheel::WheelIndicatorOffsetY + styling.labelOffsetY };
+				// Display clientName directly - client controls full label text
+				Drawer::draw_text(labelPos.x, labelPos.y, clientName.c_str(), styling.labelColor, styling.labelFontSize, drawArgs);
 			}
 		}
 
@@ -314,6 +346,15 @@ void Wheeler::OpenWheeler()
 #else
 #	define PlaySound PlaySoundA
 #endif  // !UNICODE
+
+		// Log if opening with a managed wheel active
+		std::string clientName = WheelerAPI::GetManagedWheelClientNameSafe(static_cast<int32_t>(_activeWheelIdx));
+		if (!clientName.empty()) {
+			INFO("Wheeler: Opened with managed wheel {} (client: {}) active", _activeWheelIdx, clientName);
+		}
+
+		// Notify API clients that wheel opened
+		WheelerAPI::NotifyWheelStateChanged(static_cast<int32_t>(_activeWheelIdx), true);
 	}
 }
 
@@ -322,6 +363,7 @@ void Wheeler::CloseWheeler()
 	if (!RE::PlayerCharacter::GetSingleton() || !RE::PlayerCharacter::GetSingleton()->Is3DLoaded()) {
 		return;
 	}
+	bool wasOpen = (_state != WheelState::KClosed);
 	if (_state != WheelState::KClosed) {
 		if (Config::Styling::Wheel::SlowTimeScale <= 1) {
 			if (Utils::Time::GGTM() != 1) {
@@ -339,6 +381,11 @@ void Wheeler::CloseWheeler()
 		_closeTimer = 0;
 	}
 	_state = WheelState::KClosed;
+
+	// Notify API clients that wheel closed
+	if (wasOpen) {
+		WheelerAPI::NotifyWheelStateChanged(static_cast<int32_t>(_activeWheelIdx), false);
+	}
 }
 
 void Wheeler::UpdateCursorPosMouse(float a_deltaX, float a_deltaY)
@@ -390,12 +437,29 @@ void Wheeler::NextWheel()
 			_wheels[_activeWheelIdx]->ResetAnimation();
 			_wheels[_activeWheelIdx]->SetHoveredEntryIndex(-1); // reset active entry for current wheel
 		}
-		_activeWheelIdx += 1;
-		if (_activeWheelIdx >= _wheels.size()) {
-			_activeWheelIdx = 0;
-		}
+
+		// In edit mode, skip managed wheels
+		int startIdx = _activeWheelIdx;
+		do {
+			_activeWheelIdx += 1;
+			if (_activeWheelIdx >= static_cast<int>(_wheels.size())) {
+				_activeWheelIdx = 0;
+			}
+			// If not in edit mode, accept any wheel; otherwise skip managed wheels
+			if (!_editMode || !WheelerAPI::IsManagedWheelIndex(_activeWheelIdx)) {
+				break;
+			}
+		} while (_activeWheelIdx != startIdx);  // Prevent infinite loop
+
 		_wheels[_activeWheelIdx]->ResetAnimation();
 		_wheels[_activeWheelIdx]->SetHoveredEntryIndex(-1);  // reset active entry for new wheel
+
+		// Log if switched to a managed wheel
+		std::string clientName = WheelerAPI::GetManagedWheelClientNameSafe(static_cast<int32_t>(_activeWheelIdx));
+		if (!clientName.empty()) {
+			INFO("Wheeler: Switched to managed wheel {} (client: {})", _activeWheelIdx, clientName);
+		}
+
 		if (_wheels.size() > 1) {
 #undef PlaySound
 			RE::PlaySound(Config::Sound::SD_WHEELSWITCH);
@@ -419,12 +483,29 @@ void Wheeler::PrevWheel()
 			_wheels[_activeWheelIdx]->ResetAnimation();
 			_wheels[_activeWheelIdx]->SetHoveredEntryIndex(-1); // reset active entry for current wheel
 		}
-		_activeWheelIdx -= 1;
-		if (_activeWheelIdx < 0) {
-			_activeWheelIdx = _wheels.size() - 1;
-		}
+
+		// In edit mode, skip managed wheels
+		int startIdx = _activeWheelIdx;
+		do {
+			_activeWheelIdx -= 1;
+			if (_activeWheelIdx < 0) {
+				_activeWheelIdx = static_cast<int>(_wheels.size()) - 1;
+			}
+			// If not in edit mode, accept any wheel; otherwise skip managed wheels
+			if (!_editMode || !WheelerAPI::IsManagedWheelIndex(_activeWheelIdx)) {
+				break;
+			}
+		} while (_activeWheelIdx != startIdx);  // Prevent infinite loop
+
 		_wheels[_activeWheelIdx]->ResetAnimation();
 		_wheels[_activeWheelIdx]->SetHoveredEntryIndex(-1);  // reset active entry for new wheel
+
+		// Log if switched to a managed wheel
+		std::string clientName = WheelerAPI::GetManagedWheelClientNameSafe(static_cast<int32_t>(_activeWheelIdx));
+		if (!clientName.empty()) {
+			INFO("Wheeler: Switched to managed wheel {} (client: {})", _activeWheelIdx, clientName);
+		}
+
 		if (_wheels.size() > 1) {
 #undef PlaySound
 
@@ -470,13 +551,53 @@ void Wheeler::ActivateHoveredEntrySecondary()
 		return;
 	}
 	if (_state == WheelState::KOpened) {
-		std::unique_ptr<Wheel>& activeWheel = _wheels[_activeWheelIdx];
+		Wheel* activeWheel = _wheels[_activeWheelIdx].get();
+
+		// Block edit operations on managed wheels
+		bool isManaged = WheelerAPI::IsManagedWheelIndex(static_cast<int32_t>(_activeWheelIdx));
+		DEBUG("Wheeler::ActivateHoveredEntrySecondary: wheelIdx={}, editMode={}, isManaged={}",
+			_activeWheelIdx, _editMode, isManaged);
+		if (_editMode && isManaged) {
+			INFO("Wheeler: Blocked edit operation on managed wheel {}", _activeWheelIdx);
+			return;
+		}
+
 		if (activeWheel->IsEmpty()) {         // empty wheel, we can only delete in edit mode.
 			if (_editMode && _wheels.size() > 1) {  // we have more than one wheel, so it's safe to delete this one.
 				DeleteCurrentWheel();
 			}
 		} else {
+			// Capture item info before activation for callback (only if not in edit mode)
+			int32_t entryIndex = -1;
+			int32_t itemIndex = -1;
+			uint32_t formID = 0;
+
+			if (!_editMode) {
+				entryIndex = activeWheel->GetHoveredEntryIndex();
+				if (entryIndex >= 0) {
+					WheelEntry* entry = activeWheel->GetEntry(entryIndex);
+					if (entry && !entry->IsEmpty()) {
+						itemIndex = entry->GetSelectedItemIndex();
+						WheelItem* item = entry->GetItem(itemIndex);
+						if (item) {
+							formID = item->GetFormID();
+						}
+					}
+				}
+			}
+
 			activeWheel->ActivateHoveredEntrySecondary(_editMode);
+
+			// Notify callback if we had valid item info (not in edit mode)
+			if (!_editMode && formID != 0) {
+				WheelerAPI::NotifyItemActivated(
+					static_cast<int32_t>(_activeWheelIdx),
+					entryIndex,
+					itemIndex,
+					formID,
+					false  // isPrimary = false for secondary
+				);
+			}
 		}
 	}
 }
@@ -487,7 +608,39 @@ void Wheeler::ActivateHoveredEntryPrimary()
 		return;
 	}
 	if (_state == WheelState::KOpened) {
-		_wheels[_activeWheelIdx]->ActivateHoveredEntryPrimary(_editMode);
+		Wheel* activeWheel = _wheels[_activeWheelIdx].get();
+
+		// Capture item info before activation for callback (only if not in edit mode)
+		int32_t entryIndex = -1;
+		int32_t itemIndex = -1;
+		uint32_t formID = 0;
+
+		if (!_editMode) {
+			entryIndex = activeWheel->GetHoveredEntryIndex();
+			if (entryIndex >= 0) {
+				WheelEntry* entry = activeWheel->GetEntry(entryIndex);
+				if (entry && !entry->IsEmpty()) {
+					itemIndex = entry->GetSelectedItemIndex();
+					WheelItem* item = entry->GetItem(itemIndex);
+					if (item) {
+						formID = item->GetFormID();
+					}
+				}
+			}
+		}
+
+		activeWheel->ActivateHoveredEntryPrimary(_editMode);
+
+		// Notify callback if we had valid item info (not in edit mode)
+		if (!_editMode && formID != 0) {
+			WheelerAPI::NotifyItemActivated(
+				static_cast<int32_t>(_activeWheelIdx),
+				entryIndex,
+				itemIndex,
+				formID,
+				true  // isPrimary
+			);
+		}
 	}
 }
 
@@ -505,6 +658,11 @@ void Wheeler::AddEmptyEntryToCurrentWheel()
 {
 	std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
 	if (!_editMode || _state == WheelState::KClosed || _wheels.empty() || _activeWheelIdx == -1) {
+		return;
+	}
+	// Block edit operations on managed wheels
+	if (WheelerAPI::IsManagedWheelIndex(static_cast<int32_t>(_activeWheelIdx))) {
+		INFO("Wheeler: Blocked AddEmptyEntry on managed wheel {}", _activeWheelIdx);
 		return;
 	}
 	_wheels[_activeWheelIdx]->PushEmptyEntry();
@@ -532,6 +690,11 @@ void Wheeler::DeleteCurrentWheel()
 	if (!_editMode || _state == WheelState::KClosed) {
 		return;
 	}
+	// Block deletion of managed wheels
+	if (WheelerAPI::IsManagedWheelIndex(static_cast<int32_t>(_activeWheelIdx))) {
+		INFO("Wheeler: Blocked DeleteCurrentWheel on managed wheel {}", _activeWheelIdx);
+		return;
+	}
 	if (_wheels.size() > 1) {
 		std::unique_ptr<Wheel>& toDelete = _wheels[_activeWheelIdx];
 		if (!toDelete->IsEmpty()) { // do not delete an non-empty wheel
@@ -551,6 +714,10 @@ void Wheeler::MoveEntryForwardInCurrentWheel()
 	if (!_editMode || _state == WheelState::KClosed) {
 		return;
 	}
+	// Block edit operations on managed wheels
+	if (WheelerAPI::IsManagedWheelIndex(static_cast<int32_t>(_activeWheelIdx))) {
+		return;
+	}
 	if (_activeWheelIdx != -1) {
 		_wheels[_activeWheelIdx]->MoveHoveredEntryForward();
 	}
@@ -562,6 +729,10 @@ void Wheeler::MoveEntryBackInCurrentWheel()
 	if (!_editMode || _state == WheelState::KClosed) {
 		return;
 	}
+	// Block edit operations on managed wheels
+	if (WheelerAPI::IsManagedWheelIndex(static_cast<int32_t>(_activeWheelIdx))) {
+		return;
+	}
 	if (_activeWheelIdx != -1) {
 		_wheels[_activeWheelIdx]->MoveHoveredEntryBack();
 	}
@@ -571,6 +742,10 @@ void Wheeler::MoveWheelForward()
 {
 	std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
 	if (!_editMode || _state == WheelState::KClosed) {
+		return;
+	}
+	// Block reordering of managed wheels
+	if (WheelerAPI::IsManagedWheelIndex(static_cast<int32_t>(_activeWheelIdx))) {
 		return;
 	}
 	if (_wheels.size() > 1) {
@@ -593,6 +768,10 @@ void Wheeler::MoveWheelBack()
 {
 	std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
 	if (!_editMode || _state == WheelState::KClosed) {
+		return;
+	}
+	// Block reordering of managed wheels
+	if (WheelerAPI::IsManagedWheelIndex(static_cast<int32_t>(_activeWheelIdx))) {
 		return;
 	}
 	if (_wheels.size() > 1) {
@@ -639,12 +818,33 @@ void Wheeler::SerializeFromJsonObj(const nlohmann::json& j_wheeler, SKSE::Serial
 void Wheeler::SerializeIntoJsonObj(nlohmann::json& j_wheeler)
 {
 	j_wheeler["wheels"] = nlohmann::json::array();
-	for (const std::unique_ptr<Wheel>& wheel : _wheels) {
+	int32_t savedWheelCount = 0;
+	int32_t adjustedActiveIdx = _activeWheelIdx;
+
+	for (size_t i = 0; i < _wheels.size(); i++) {
+		// Skip managed wheels - they are owned by external clients
+		if (WheelerAPI::IsManagedWheelIndex(static_cast<int32_t>(i))) {
+			// If active wheel is after this managed wheel, adjust index
+			if (static_cast<int32_t>(i) < _activeWheelIdx) {
+				adjustedActiveIdx--;
+			}
+			continue;
+		}
+
 		nlohmann::json j_wheel;
-		wheel->SerializeIntoJsonObj(j_wheel);
+		_wheels[i]->SerializeIntoJsonObj(j_wheel);
 		j_wheeler["wheels"].push_back(j_wheel);
+		savedWheelCount++;
 	}
-	j_wheeler["activewheel"] = _activeWheelIdx;
+
+	// Clamp adjusted active index to valid range
+	if (adjustedActiveIdx < 0) {
+		adjustedActiveIdx = 0;
+	} else if (savedWheelCount > 0 && adjustedActiveIdx >= savedWheelCount) {
+		adjustedActiveIdx = savedWheelCount - 1;
+	}
+
+	j_wheeler["activewheel"] = adjustedActiveIdx;
 }
 
 void Wheeler::SetupDefaultWheels()
@@ -718,6 +918,7 @@ void Wheeler::enterEditMode()
 		return;
 	}
 	_editMode = true;
+	WheelerAPI::NotifyEditModeChanged(true, nullptr, 0);
 }
 
 void Wheeler::exitEditMode()
@@ -726,6 +927,8 @@ void Wheeler::exitEditMode()
 		return;
 	}
 	_editMode = false;
+	// TODO: Track changes during edit mode and pass them here
+	WheelerAPI::NotifyEditModeChanged(false, nullptr, 0);
 }
 
 float Wheeler::getCursorRadiusMax()
@@ -734,6 +937,14 @@ float Wheeler::getCursorRadiusMax()
 		return 0.0f;
 	}
 	return Config::Control::Wheel::CursorRadiusPerEntry * _wheels[_activeWheelIdx]->GetNumEntries();
+}
+
+Wheel* Wheeler::GetWheelByIndex(int a_index)
+{
+	if (a_index < 0 || a_index >= static_cast<int>(_wheels.size())) {
+		return nullptr;
+	}
+	return _wheels[a_index].get();
 }
 
 // bool Wheeler::OffsetCamera(RE::TESCamera* a_this)
