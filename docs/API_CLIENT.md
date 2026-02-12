@@ -10,7 +10,7 @@ Clients access Wheeler's functionality through a single exported function that r
 
 - **Custom indicator text** - Display "O" instead of "M" on your managed wheel
 - **Label styling** - Customize font size, color, and position of the managed wheel label
-- **Entry subtext** - Show per-entry labels like "Wildcard" or "Primary" below item names
+- **Entry subtext** - Show per-entry labels like "Wildcard" or "Primary" below item names (also renders on empty entries)
 
 ## Getting Started
 
@@ -111,6 +111,8 @@ bool SetupMyWheel()
 
 v2 adds the ability to display custom text below item names. This is useful for showing status like "Wildcard", "Primary", or cooldown timers.
 
+Subtext also renders on **empty entries** (entries with no item). This enables managed wheels to show labels like "(No healing)" or "(No damage)" on empty classified slots, so users can see what the slot is intended for even when no candidate is available.
+
 ### SubtextConfig Options
 
 | Field | Type | Description |
@@ -145,6 +147,30 @@ void ClearSubtext(int32_t entryIndex)
 
     // Pass nullptr to clear
     g_wheelerAPI->SetManagedWheelEntrySubtext(g_myWheelIndex, entryIndex, nullptr);
+}
+```
+
+### Empty Entry Labels
+
+Subtext renders on empty entries too, which is useful for showing what type of item the slot expects:
+
+```cpp
+void SetNoMatchLabel(int32_t entryIndex, const char* classification)
+{
+    if (!g_wheelerAPI || g_wheelerAPI->version < 2) return;
+
+    // e.g., "(No healing)" on an empty healing slot
+    std::string label = std::string("(No ") + classification + ")";
+
+    WheelerAPI::SubtextConfig config = {
+        .text = label.c_str(),
+        .offsetX = 0.0f,
+        .offsetY = 0.0f,   // Centered vertically (no item to offset from)
+        .fontSize = 0.0f,   // Use default
+        .color = 0x80FFFFFF  // 50% white (dimmer than normal subtext)
+    };
+
+    g_wheelerAPI->SetManagedWheelEntrySubtext(g_myWheelIndex, entryIndex, &config);
 }
 ```
 

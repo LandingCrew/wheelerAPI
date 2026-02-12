@@ -150,44 +150,40 @@ void WheelEntry::drawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::In
 	try {
 		std::shared_lock<std::shared_mutex> lock(this->_lock);
 
-		if (_items.empty()) {
-			return;  // nothing to draw
-		}
+		if (!_items.empty()) {
+			bool itemRemoved = false;
 
-		bool itemRemoved = false;
-
-		//遍历所有的 slot，检查物品是否还在玩家库存中
-		for (int i = 0; i < _items.size(); ++i) {
-			auto item = _items[i];
-			//如果是 shout，跳过可用性检查
-			if (auto shoutItem = std::dynamic_pointer_cast<WheelItemShout>(item)) {
-				continue;  //不要删除 shout
-			}
-			if (!item->IsAvailable(a_imap)) {
-				//标记删除的物品，不立即删除以防止影响遍历过程
-				_items.erase(_items.begin() + i);
-				if (i < _selectedItem && _selectedItem > 0) {
-					_selectedItem--;
+			//遍历所有的 slot，检查物品是否还在玩家库存中
+			for (int i = 0; i < _items.size(); ++i) {
+				auto item = _items[i];
+				//如果是 shout，跳过可用性检查
+				if (auto shoutItem = std::dynamic_pointer_cast<WheelItemShout>(item)) {
+					continue;  //不要删除 shout
 				}
-				i--;  //调整索引，防止跳过下一个元素
-				itemRemoved = true;
+				if (!item->IsAvailable(a_imap)) {
+					//标记删除的物品，不立即删除以防止影响遍历过程
+					_items.erase(_items.begin() + i);
+					if (i < _selectedItem && _selectedItem > 0) {
+						_selectedItem--;
+					}
+					i--;  //调整索引，防止跳过下一个元素
+					itemRemoved = true;
+				}
+			}
+
+			if (!_items.empty()) {
+				//确保 _selectedItem 在有效范围内
+				if (_selectedItem >= _items.size()) {
+					_selectedItem = _items.size() - 1;  //防止越界
+				}
+
+				//绘制slot
+				_items[_selectedItem]->DrawSlot(a_center, a_hovered, a_imap, a_drawArgs);
 			}
 		}
-
-		//如果没有可用的物品，直接返回
-		if (_items.empty()) {
-			return;
-		}
-
-		//确保 _selectedItem 在有效范围内
-		if (_selectedItem >= _items.size()) {
-			_selectedItem = _items.size() - 1;  //防止越界
-		}
-
-		//绘制slot
-		_items[_selectedItem]->DrawSlot(a_center, a_hovered, a_imap, a_drawArgs);
 
 		// Draw subtext if set for this entry (API v2 feature)
+		// Renders even on empty entries so managed wheels can show labels like "(No healing)"
 		if (a_wheelIndex >= 0 && a_entryIndex >= 0) {
 			auto subtextInfo = WheelerAPI::GetEntrySubtextInfo(a_wheelIndex, a_entryIndex);
 			if (subtextInfo.hasSubtext) {

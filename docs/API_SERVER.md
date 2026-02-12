@@ -9,7 +9,7 @@ Wheeler exposes a C API via a single exported function `GetWheelerAPI()` that re
 ## What's New in v2
 
 - **Extended WheelConfig** - Styling options for label and indicator
-- **Entry Subtext** - Per-entry labels displayed below item names
+- **Entry Subtext** - Per-entry labels displayed below item names (also renders on empty entries)
 - **WheelStateCallback signature change** - Now includes wheelIndex parameter
 
 ## Export
@@ -161,7 +161,7 @@ Managed wheel properties:
 
 ### Entry Subtext Storage (v2)
 
-Track subtext per-entry for managed wheels:
+Track subtext per-entry for managed wheels. Subtext is independent of item state — it persists across `ClearEntry()` calls and renders on empty entries:
 
 ```cpp
 // Internal storage for subtext
@@ -259,20 +259,29 @@ if (styling.isValid && WheelerAPI::ShouldShowManagedWheelLabel(_activeWheelIdx))
 
 ### Entry Subtext Rendering (v2)
 
-In WheelEntry::drawSlot(), after drawing the item name:
+Subtext must render **regardless of whether the entry has items**. This allows managed wheels to display labels like "(No healing)" on empty classified slots.
+
+In `WheelEntry::drawSlot()`, the item drawing is guarded by `!_items.empty()`, but subtext rendering runs unconditionally afterward:
 
 ```cpp
-// Draw entry subtext if present
-auto subtextInfo = WheelerAPI::GetEntrySubtextInfo(wheelIndex, entryIndex);
-if (subtextInfo.hasSubtext) {
-    ImVec2 subtextPos = {
-        entryCenter.x + subtextInfo.offsetX,
-        entryCenter.y + itemNameHeight + subtextInfo.offsetY
-    };
-    Drawer::draw_text(subtextPos.x, subtextPos.y, subtextInfo.text.c_str(),
-                      subtextInfo.color, subtextInfo.fontSize, drawArgs);
+// Item drawing is conditional on having items
+if (!_items.empty()) {
+    // ... availability checks, bounds validation, DrawSlot() ...
+}
+
+// Subtext always renders — even on empty entries (e.g., "(No healing)")
+if (a_wheelIndex >= 0 && a_entryIndex >= 0) {
+    auto subtextInfo = WheelerAPI::GetEntrySubtextInfo(a_wheelIndex, a_entryIndex);
+    if (subtextInfo.hasSubtext) {
+        float subtextX = a_center.x + subtextInfo.offsetX;
+        float subtextY = a_center.y + subtextInfo.offsetY;
+        Drawer::draw_text(subtextX, subtextY, subtextInfo.text.c_str(),
+                          subtextInfo.color, subtextInfo.fontSize, a_drawArgs);
+    }
 }
 ```
+
+**Important:** Do not early-return from `drawSlot()` when `_items` is empty if subtext might be set. The subtext code must be reachable for empty entries on managed wheels.
 
 ### Edit Mode Behavior
 
@@ -537,7 +546,7 @@ enum class Result : int32_t
 1. `src/bin/API/WheelerAPI.h` - Public header with types, interface, and internal function declarations
 2. `src/bin/API/WheelerAPI.cpp` - Implementation of all API functions, styling, and subtext tracking
 3. `src/bin/Wheeler/Wheeler.cpp` - Hook callbacks, draw managed label with styling
-4. `src/bin/Wheeler/WheelEntry.cpp` - Draw entry subtext
+4. `src/bin/Wheeler/WheelEntry.cpp` - Draw entry subtext (renders on empty entries too)
 5. `src/bin/Wheeler/WheelItemFactory.cpp` - Create wheel items from FormID
 6. `src/bin/Wheeler/WheelItemFactory.h` - Factory function declarations
 7. Various WheelItem headers - Added `GetFormID()` virtual method overrides

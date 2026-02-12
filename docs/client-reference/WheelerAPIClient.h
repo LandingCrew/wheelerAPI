@@ -18,7 +18,7 @@
 // v2 Features:
 //   - Custom indicator text (e.g., "O" instead of "M")
 //   - Label styling (font size, color, offset)
-//   - Per-entry subtext (e.g., "Wildcard", "Primary")
+//   - Per-entry subtext (e.g., "Wildcard", "Primary", "(No healing)" on empty slots)
 //
 // =============================================================================
 
@@ -81,12 +81,14 @@ namespace WheelerAPI
 
     // =========================================================================
     // Configuration for entry subtext (v2)
+    // Renders on both populated and empty entries. Use on empty entries to
+    // show labels like "(No healing)" for classified slots with no candidate.
     // =========================================================================
     struct SubtextConfig
     {
         const char* text;    // The subtext to display (nullptr or "" to clear)
         float offsetX;       // X offset from entry center (default: 0)
-        float offsetY;       // Y offset below item name (default: 20)
+        float offsetY;       // Y offset below item name (default: 20; use 0 for empty entries)
         float fontSize;      // Font size in pixels (default: 28, 0 = use default)
         uint32_t color;      // RGBA color (default: 0xB0FFFFFF = 70% white, 0 = use default)
     };
@@ -410,6 +412,7 @@ public:
     // =========================================================================
 
     /// Set subtext on an entry (v2 feature)
+    /// Works on both populated and empty entries.
     /// @param entryIndex The entry to set subtext on
     /// @param text The subtext to display (nullptr or "" to clear)
     void SetEntrySubtext(int32_t entryIndex, const char* text)
@@ -582,11 +585,14 @@ void OnGameUpdate()
     // Update the wheel
     client.UpdateItems(recommendedFormIDs);
 
-    // Update subtext for wildcards (v2 feature)
+    // Update subtext (v2 feature) — works on both populated and empty entries
     if (client.HasV2Features()) {
         for (size_t i = 0; i < recommendedFormIDs.size(); ++i) {
             if (isWildcard[i]) {
                 client.SetEntrySubtext(static_cast<int32_t>(i), "Wildcard");
+            } else if (recommendedFormIDs[i] == 0) {
+                // Empty slot — show what type of item is missing
+                client.SetEntrySubtext(static_cast<int32_t>(i), "(No healing)");
             } else {
                 client.ClearEntrySubtext(static_cast<int32_t>(i));
             }
