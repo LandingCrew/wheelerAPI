@@ -11,9 +11,9 @@
 #include <SimpleIni.h>
 
 #ifdef NDEBUG
-#	include <spdlog/sinks/basic_file_sink.h>
+#   include <spdlog/sinks/basic_file_sink.h>
 #else
-#	include <spdlog/sinks/msvc_sink.h>
+#   include <spdlog/sinks/msvc_sink.h>
 #endif
 #pragma warning(pop)
 
@@ -23,20 +23,20 @@ namespace logger = SKSE::log;
 
 namespace util
 {
-	using SKSE::stl::report_and_fail;
+   using SKSE::stl::report_and_fail;
 }
 
 namespace std
 {
-	template <class T>
-	struct hash<RE::BSPointerHandle<T>>
-	{
-		uint32_t operator()(const RE::BSPointerHandle<T>& a_handle) const
-		{
-			uint32_t nativeHandle = const_cast<RE::BSPointerHandle<T>*>(&a_handle)->native_handle();  // ugh
-			return nativeHandle;
-		}
-	};
+   template <class T>
+   struct hash<RE::BSPointerHandle<T>>
+   {
+      uint32_t operator()(const RE::BSPointerHandle<T>& a_handle) const
+      {
+      uint32_t nativeHandle = const_cast<RE::BSPointerHandle<T>*>(&a_handle)->native_handle();  // ugh
+      return nativeHandle;
+      }
+   };
 }
 
 #define DLLEXPORT __declspec(dllexport)
@@ -65,10 +65,10 @@ namespace std
 
 struct DrawArgs
 {
-	double alphaMult = 1.0f;
-	float scaleMult = 1.0f;
-	float rotationOffset = 0.0f;
-	ImVec2 translationOffset = ImVec2(0.0f, 0.0f);
-	bool centerObject = true;
+   double alphaMult = 1.0f;
+   float scaleMult = 1.0f;
+   float rotationOffset = 0.0f;
+   ImVec2 translationOffset = ImVec2(0.0f, 0.0f);
+   bool centerObject = true;
 };
 

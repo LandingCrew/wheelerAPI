@@ -16,14 +16,14 @@ class TimeFloatInterpolator;
 class TimeFloatInterpolatorManager
 {
 private:
-	static inline std::unordered_set<TimeFloatInterpolator*> interpolators;
-	static inline std::mutex mutex;
+   static inline std::unordered_set<TimeFloatInterpolator*> interpolators;
+   static inline std::mutex mutex;
 
 public:
-	static void RegisterInterpolator(TimeFloatInterpolator* interpolator);
+   static void RegisterInterpolator(TimeFloatInterpolator* interpolator);
 
-	static void UnregisterInterpolator(TimeFloatInterpolator* interpolator);
+   static void UnregisterInterpolator(TimeFloatInterpolator* interpolator);
 
-	static void Update(float dt);
+   static void Update(float dt);
 };
 

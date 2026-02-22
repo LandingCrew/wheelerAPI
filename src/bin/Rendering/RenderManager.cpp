@@ -20,227 +20,227 @@
 
 namespace stl
 {
-	using namespace SKSE::stl;
+   using namespace SKSE::stl;
 
-	template <class T>
-	void write_thunk_call()
-	{
-		auto& trampoline = SKSE::GetTrampoline();
-		const REL::Relocation<std::uintptr_t> hook{ T::id, T::offset };
-		T::func = trampoline.write_call<5>(hook.address(), T::thunk);
-	}
+   template <class T>
+   void write_thunk_call()
+   {
+      auto& trampoline = SKSE::GetTrampoline();
+      const REL::Relocation<std::uintptr_t> hook{ T::id, T::offset };
+      T::func = trampoline.write_call<5>(hook.address(), T::thunk);
+   }
 }
 
 LRESULT RenderManager::WndProcHook::thunk(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	auto& io = ImGui::GetIO();
-	if (uMsg == WM_KILLFOCUS) {
-		io.ClearInputCharacters();
-		io.ClearInputKeys();
-	}
+   auto& io = ImGui::GetIO();
+   if (uMsg == WM_KILLFOCUS) {
+      io.ClearInputCharacters();
+      io.ClearInputKeys();
+   }
 
-	return func(hWnd, uMsg, wParam, lParam);
+   return func(hWnd, uMsg, wParam, lParam);
 }
 
 void RenderManager::D3DInitHook::thunk()
 {
-	func();
+   func();
 
-	INFO("RenderManager: Initializing...");
-	auto* renderer = RE::BSGraphics::Renderer::GetSingleton();
-	if (!renderer) {
-		ERROR("Cannot find render manager. Initialization failed!");
-		return;
-	}
+   INFO("RenderManager: Initializing...");
+   auto* renderer = RE::BSGraphics::Renderer::GetSingleton();
+   if (!renderer) {
+      ERROR("Cannot find render manager. Initialization failed!");
+      return;
+   }
 
-	auto& render_data = renderer->data;
+   auto& render_data = renderer->data;
 
-	INFO("Getting swapchain...");
-	auto* swapchain = render_data.renderWindows[0].swapChain;
-	if (!swapchain) {
-		ERROR("Cannot find swapchain. Initialization failed!");
-		return;
-	}
+   INFO("Getting swapchain...");
+   auto* swapchain = render_data.renderWindows[0].swapChain;
+   if (!swapchain) {
+      ERROR("Cannot find swapchain. Initialization failed!");
+      return;
+   }
 
-	INFO("Getting swapchain desc...");
-	DXGI_SWAP_CHAIN_DESC sd{};
-	if (swapchain->GetDesc(std::addressof(sd)) < 0) {
-		ERROR("IDXGISwapChain::GetDesc failed.");
-		return;
-	}
+   INFO("Getting swapchain desc...");
+   DXGI_SWAP_CHAIN_DESC sd{};
+   if (swapchain->GetDesc(std::addressof(sd)) < 0) {
+      ERROR("IDXGISwapChain::GetDesc failed.");
+      return;
+   }
 
-	device = render_data.forwarder;
-	Texture::device_ = device;
-	context = render_data.context;
+   device = render_data.forwarder;
+   Texture::device_ = device;
+   context = render_data.context;
 
-	INFO("Initializing ImGui...");
-	ImGui::CreateContext();
-	if (!ImGui_ImplWin32_Init(sd.OutputWindow)) {
-		ERROR("ImGui initialization failed (Win32)");
-		return;
-	}
-	if (!ImGui_ImplDX11_Init(device, context)) {
-		ERROR("ImGui initialization failed (DX11)");
-		return;
-	}
+   INFO("Initializing ImGui...");
+   ImGui::CreateContext();
+   if (!ImGui_ImplWin32_Init(sd.OutputWindow)) {
+      ERROR("ImGui initialization failed (Win32)");
+      return;
+   }
+   if (!ImGui_ImplDX11_Init(device, context)) {
+      ERROR("ImGui initialization failed (DX11)");
+      return;
+   }
 
-	INFO("...ImGui Initialized");
+   INFO("...ImGui Initialized");
 
-	initialized.store(true);
+   initialized.store(true);
 
-	WndProcHook::func = reinterpret_cast<WNDPROC>(
-		SetWindowLongPtrA(
-			sd.OutputWindow,
-			GWLP_WNDPROC,
-			reinterpret_cast<LONG_PTR>(WndProcHook::thunk)));
-	if (!WndProcHook::func)
-		ERROR("SetWindowLongPtrA failed!");
+   WndProcHook::func = reinterpret_cast<WNDPROC>(
+      SetWindowLongPtrA(
+      sd.OutputWindow,
+      GWLP_WNDPROC,
+      reinterpret_cast<LONG_PTR>(WndProcHook::thunk)));
+   if (!WndProcHook::func)
+      ERROR("SetWindowLongPtrA failed!");
 
-	INFO("Building font atlas...");
-	std::filesystem::path fontPath;
-	bool foundCustomFont = false;
-	const ImWchar* glyphRanges = 0;
+   INFO("Building font atlas...");
+   std::filesystem::path fontPath;
+   bool foundCustomFont = false;
+   const ImWchar* glyphRanges = 0;
 #define FONTSETTING_PATH "Data\\SKSE\\Plugins\\wheeler\\resources\\fonts\\FontConfig.ini"
-	CSimpleIniA ini;
-	ini.LoadFile(FONTSETTING_PATH);
-	if (!ini.IsEmpty()) {
-		const char* language = ini.GetValue("config", "font", 0);
-		if (language) {
-			std::string fontDir = R"(Data\SKSE\Plugins\wheeler\resources\fonts\)" + std::string(language);
-			// check if folder exists
-			if (std::filesystem::exists(fontDir) && std::filesystem::is_directory(fontDir)) {
-				for (const auto& entry : std::filesystem::directory_iterator(fontDir)) {
-					auto entryPath = entry.path();
-					if (entryPath.extension() == ".ttf" || entryPath.extension() == ".ttc") {
-						fontPath = entryPath;
-						foundCustomFont = true;
-						break;
-					}
-				}
-			}
-			if (foundCustomFont) {
-				std::string languageStr = language;
-				INFO("Loading font: {}", fontPath.string().c_str());
-				if (languageStr == "Chinese") {
-					INFO("Glyph range set to Chinese");
-					glyphRanges = ImGui::GetIO().Fonts->GetGlyphRangesChineseFull();
-				} else if (languageStr == "Korean") {
-					INFO("Glyph range set to Korean");
-					glyphRanges = ImGui::GetIO().Fonts->GetGlyphRangesKorean();
-				} else if (languageStr == "Japanese") {
-					INFO("Glyph range set to Japanese");
-					glyphRanges = ImGui::GetIO().Fonts->GetGlyphRangesJapanese();
-				} else if (languageStr == "Thai") {
-					INFO("Glyph range set to Thai");
-					glyphRanges = ImGui::GetIO().Fonts->GetGlyphRangesThai();
-				} else if (languageStr == "Vietnamese") {
-					INFO("Glyph range set to Vietnamese");
-					glyphRanges = ImGui::GetIO().Fonts->GetGlyphRangesVietnamese();
-				} else if (languageStr == "Cyrillic") {
-					glyphRanges = ImGui::GetIO().Fonts->GetGlyphRangesCyrillic();
-					INFO("Glyph range set to Cyrillic");
-				} else if (languageStr == "Polish") {
-					glyphRanges = FontLoader::GetGlyphRangesPolish();
-					INFO("Glyph range set to Polish");
-				}
-			} else {
-				INFO("No font found for language: {}", language);
-			}
-		}
-	}
+   CSimpleIniA ini;
+   ini.LoadFile(FONTSETTING_PATH);
+   if (!ini.IsEmpty()) {
+      const char* language = ini.GetValue("config", "font", 0);
+      if (language) {
+      std::string fontDir = R"(Data\SKSE\Plugins\wheeler\resources\fonts\)" + std::string(language);
+      // check if folder exists
+      if (std::filesystem::exists(fontDir) && std::filesystem::is_directory(fontDir)) {
+        for (const auto& entry : std::filesystem::directory_iterator(fontDir)) {
+           auto entryPath = entry.path();
+           if (entryPath.extension() == ".ttf" || entryPath.extension() == ".ttc") {
+            fontPath = entryPath;
+            foundCustomFont = true;
+            break;
+           }
+        }
+      }
+      if (foundCustomFont) {
+        std::string languageStr = language;
+        INFO("Loading font: {}", fontPath.string().c_str());
+        if (languageStr == "Chinese") {
+           INFO("Glyph range set to Chinese");
+           glyphRanges = ImGui::GetIO().Fonts->GetGlyphRangesChineseFull();
+        } else if (languageStr == "Korean") {
+           INFO("Glyph range set to Korean");
+           glyphRanges = ImGui::GetIO().Fonts->GetGlyphRangesKorean();
+        } else if (languageStr == "Japanese") {
+           INFO("Glyph range set to Japanese");
+           glyphRanges = ImGui::GetIO().Fonts->GetGlyphRangesJapanese();
+        } else if (languageStr == "Thai") {
+           INFO("Glyph range set to Thai");
+           glyphRanges = ImGui::GetIO().Fonts->GetGlyphRangesThai();
+        } else if (languageStr == "Vietnamese") {
+           INFO("Glyph range set to Vietnamese");
+           glyphRanges = ImGui::GetIO().Fonts->GetGlyphRangesVietnamese();
+        } else if (languageStr == "Cyrillic") {
+           glyphRanges = ImGui::GetIO().Fonts->GetGlyphRangesCyrillic();
+           INFO("Glyph range set to Cyrillic");
+        } else if (languageStr == "Polish") {
+           glyphRanges = FontLoader::GetGlyphRangesPolish();
+           INFO("Glyph range set to Polish");
+        }
+      } else {
+        INFO("No font found for language: {}", language);
+      }
+      }
+   }
 #define ENABLE_FREETYPE 1
 #if ENABLE_FREETYPE
-	ImFontAtlas* atlas = ImGui::GetIO().Fonts;
-	atlas->FontBuilderIO = ImGuiFreeType::GetBuilderForFreeType();
-	atlas->FontBuilderFlags = ImGuiFreeTypeBuilderFlags_LightHinting;
+   ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+   atlas->FontBuilderIO = ImGuiFreeType::GetBuilderForFreeType();
+   atlas->FontBuilderFlags = ImGuiFreeTypeBuilderFlags_LightHinting;
 #else
 #endif
-	if (foundCustomFont) {
-		ImGui::GetIO().Fonts->AddFontFromFileTTF(fontPath.string().c_str(), 64.0f, NULL, glyphRanges);
-	}
-	
-	INFO("...font atlas built");
+   if (foundCustomFont) {
+      ImGui::GetIO().Fonts->AddFontFromFileTTF(fontPath.string().c_str(), 64.0f, NULL, glyphRanges);
+   }
+   
+   INFO("...font atlas built");
 
-	INFO("RenderManager: Initialized");
+   INFO("RenderManager: Initialized");
 
 }
 
 void RenderManager::DXGIPresentHook::thunk(std::uint32_t a_p1)
 {
-	func(a_p1);
+   func(a_p1);
 
-	if (!D3DInitHook::initialized.load())
-		return;
+   if (!D3DInitHook::initialized.load())
+      return;
 
-	// prologue
-	ImGui_ImplDX11_NewFrame();
-	ImGui_ImplWin32_NewFrame();
-	ImGui::NewFrame();
+   // prologue
+   ImGui_ImplDX11_NewFrame();
+   ImGui_ImplWin32_NewFrame();
+   ImGui::NewFrame();
 
-	// do stuff
-	RenderManager::draw();
+   // do stuff
+   RenderManager::draw();
 
-	// epilogue
-	ImGui::EndFrame();
-	ImGui::Render();
-	ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+   // epilogue
+   ImGui::EndFrame();
+   ImGui::Render();
+   ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 }
 
 struct ImageSet
 {
-	std::int32_t my_image_width = 0;
-	std::int32_t my_image_height = 0;
-	ID3D11ShaderResourceView* my_texture = nullptr;
+   std::int32_t my_image_width = 0;
+   std::int32_t my_image_height = 0;
+   ID3D11ShaderResourceView* my_texture = nullptr;
 };
 
 
 void RenderManager::MessageCallback(SKSE::MessagingInterface::Message* msg)  //CallBack & LoadTextureFromFile should called after resource loaded.
 {
-	if (msg->type == SKSE::MessagingInterface::kDataLoaded && D3DInitHook::initialized) {
-		auto& io = ImGui::GetIO();
-		io.MouseDrawCursor = true;
-		io.WantSetMousePos = true;
-	}
+   if (msg->type == SKSE::MessagingInterface::kDataLoaded && D3DInitHook::initialized) {
+      auto& io = ImGui::GetIO();
+      io.MouseDrawCursor = true;
+      io.WantSetMousePos = true;
+   }
 }
 
 bool RenderManager::Install()
 {
-	auto g_message = SKSE::GetMessagingInterface();
-	if (!g_message) {
-		ERROR("Messaging Interface Not Found!");
-		return false;
-	}
+   auto g_message = SKSE::GetMessagingInterface();
+   if (!g_message) {
+      ERROR("Messaging Interface Not Found!");
+      return false;
+   }
 
-	g_message->RegisterListener(MessageCallback);
+   g_message->RegisterListener(MessageCallback);
 
-	SKSE::AllocTrampoline(14 * 2);
+   SKSE::AllocTrampoline(14 * 2);
 
-	stl::write_thunk_call<D3DInitHook>();
-	stl::write_thunk_call<DXGIPresentHook>();
+   stl::write_thunk_call<D3DInitHook>();
+   stl::write_thunk_call<DXGIPresentHook>();
 
-	
-	return true;
+   
+   return true;
 }
 
 
 
 float RenderManager::GetResolutionScaleWidth()
 {
-	return ImGui::GetIO().DisplaySize.x / 1920.f;
+   return ImGui::GetIO().DisplaySize.x / 1920.f;
 }
 
 float RenderManager::GetResolutionScaleHeight()
 {
-	return ImGui::GetIO().DisplaySize.y / 1080.f;
+   return ImGui::GetIO().DisplaySize.y / 1080.f;
 }
 
 
 void RenderManager::draw()
 {
 
-	// Add UI elements here
-	float deltaTime = ImGui::GetIO().DeltaTime;
-	Wheeler::Update(deltaTime);
-	TimeFloatInterpolatorManager::Update(deltaTime);
+   // Add UI elements here
+   float deltaTime = ImGui::GetIO().DeltaTime;
+   Wheeler::Update(deltaTime);
+   TimeFloatInterpolatorManager::Update(deltaTime);
 
 }

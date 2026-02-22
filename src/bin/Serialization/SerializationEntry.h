@@ -13,11 +13,11 @@ class SerializationEntry
 {
 
 public:
-	// Set up serialization
-	static void BindSerializationCallbacks(const SKSE::SerializationInterface* a_in);
+   // Set up serialization
+   static void BindSerializationCallbacks(const SKSE::SerializationInterface* a_in);
 
 protected:
-	static void Save(SKSE::SerializationInterface* a_intfc);
-	static void Load(SKSE::SerializationInterface* a_intfc);
-	static void Revert(SKSE::SerializationInterface* a_intfc);
+   static void Save(SKSE::SerializationInterface* a_intfc);
+   static void Load(SKSE::SerializationInterface* a_intfc);
+   static void Revert(SKSE::SerializationInterface* a_intfc);
 };
