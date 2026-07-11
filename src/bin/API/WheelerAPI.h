@@ -36,7 +36,9 @@ namespace WheelerAPI
    // API version - bump on breaking changes
    // v1: Initial API
    // v2: Added SetManagedWheelEntrySubtext()
-   constexpr uint32_t API_VERSION = 2;
+   // v3: Added DeleteManagedWheelsForClient(); managed metadata moved onto the wheel
+   //     (fixes stale-index desync on mid-session wheel insert/remove)
+   constexpr uint32_t API_VERSION = 3;
 
    // ============================================================================
    // Result Codes
@@ -198,6 +200,15 @@ namespace WheelerAPI
       // @param config Subtext configuration (text, position, size, color)
       // @return Result::OK on success
       Result (*SetManagedWheelEntrySubtext)(int32_t wheelIndex, int32_t entryIndex, const SubtextConfig* config);
+
+      // --- v3: Batch delete by client ---
+      // Delete ALL managed wheels owned by the given client in one shift-safe pass.
+      // Prefer this over looping DeleteManagedWheel() with stored indices: each
+      // single delete shifts the remaining indices, so a caller's stored indices go
+      // stale mid-loop and wheels get orphaned. This removes them all at once.
+      // @param clientName The client name passed in WheelConfig::clientName
+      // @return number of wheels deleted (>= 0), or a negative Result on error
+      int32_t (*DeleteManagedWheelsForClient)(const char* clientName);
    };
 
    // ============================================================================

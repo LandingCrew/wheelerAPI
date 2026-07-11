@@ -18,26 +18,18 @@ namespace WheelerAPI
 
    static std::atomic<bool> s_initialized{ false };
 
-   // Info about a managed wheel
-   struct ManagedWheelInfo
+   // Managed-wheel metadata now lives ON each Wheel (Wheel::GetManagedInfo), so it
+   // can never desync from the wheel's position when the list is reindexed. This
+   // counter is a cheap best-effort tally for diagnostics only.
+   static std::atomic<int> s_managedWheelCount{ 0 };
+
+   // Read a wheel's managed info by list index. Lock-free: the caller must hold the
+   // Wheeler wheel-data lock (same convention as Wheeler::GetWheelByIndex).
+   static const WheelManagedInfo* GetManagedInfoForIndex(int32_t wheelIndex)
    {
-      std::string clientName;
-      bool showLabel;
-
-      // Label styling
-      float labelFontSize = 42.0f;
-      uint32_t labelColor = C_SKYRIMWHITE;
-      float labelOffsetY = 50.0f;
-
-      // Indicator styling
-      std::string indicatorText = "M";
-      uint32_t indicatorActiveColor = IM_COL32(0, 255, 255, 255);    // Cyan
-      uint32_t indicatorInactiveColor = IM_COL32(100, 200, 200, 180); // Dim cyan
-   };
-
-   // Maps wheel index -> managed wheel info
-   static std::unordered_map<int32_t, ManagedWheelInfo> s_managedWheelClients;
-   static std::shared_mutex s_managedWheelLock;
+      Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
+      return wheel ? wheel->GetManagedInfo() : nullptr;
+   }
 
    // Internal storage for subtext info
    struct SubtextData
@@ -120,12 +112,12 @@ namespace WheelerAPI
    // Called by Wheeler when wheel opens/closes
    void NotifyWheelStateChanged(int32_t wheelIndex, bool isOpen)
    {
-      // Log managed wheel count on state change
+      // Log managed wheel count on state change (best-effort diagnostic)
       {
-      std::shared_lock lock(s_managedWheelLock);
-      if (!s_managedWheelClients.empty()) {
+      int managedCount = s_managedWheelCount.load(std::memory_order_relaxed);
+      if (managedCount > 0) {
         DEBUG("WheelerAPI: Wheel {} (index={}) - {} managed wheel(s) registered",
-           isOpen ? "opened" : "closed", wheelIndex, s_managedWheelClients.size());
+           isOpen ? "opened" : "closed", wheelIndex, managedCount);
       }
       }
 
@@ -139,47 +131,39 @@ namespace WheelerAPI
       }
    }
 
+   // NOTE: These managed-wheel readers are lock-free and read the info straight off
+   // the Wheel. Every caller is either the renderer (Wheeler::Update, which holds a
+   // shared wheel-data lock) or a Wheeler edit/navigation path that already accesses
+   // _wheels the same way — the caller synchronizes, matching Wheeler::GetWheelByIndex.
+
    // Check if wheel index is managed (for serialization exclusion)
    bool IsManagedWheelIndex(int32_t wheelIndex)
    {
-      std::shared_lock lock(s_managedWheelLock);
-      return s_managedWheelClients.find(wheelIndex) != s_managedWheelClients.end();
+      return GetManagedInfoForIndex(wheelIndex) != nullptr;
    }
 
    // Get client name for a managed wheel (returns copy for thread safety)
    // Use this when you need to store/log the name safely
    std::string GetManagedWheelClientNameSafe(int32_t wheelIndex)
    {
-      std::shared_lock lock(s_managedWheelLock);
-      auto it = s_managedWheelClients.find(wheelIndex);
-      if (it != s_managedWheelClients.end()) {
-      return it->second.clientName;
-      }
-      return std::string();
+      const WheelManagedInfo* info = GetManagedInfoForIndex(wheelIndex);
+      return info ? info->clientName : std::string();
    }
 
    // Get client name for a managed wheel
-   // WARNING: The returned pointer is only valid while s_managedWheelLock is held.
-   // Caller must copy immediately if needed beyond the current scope.
+   // WARNING: The returned pointer is only valid while the wheel-data lock is held
+   // and the wheel exists. Caller must copy immediately if needed beyond that scope.
    const char* GetManagedWheelClientName(int32_t wheelIndex)
    {
-      std::shared_lock lock(s_managedWheelLock);
-      auto it = s_managedWheelClients.find(wheelIndex);
-      if (it != s_managedWheelClients.end()) {
-      return it->second.clientName.c_str();
-      }
-      return nullptr;
+      const WheelManagedInfo* info = GetManagedInfoForIndex(wheelIndex);
+      return info ? info->clientName.c_str() : nullptr;
    }
 
    // Check if managed wheel label should be shown
    bool ShouldShowManagedWheelLabel(int32_t wheelIndex)
    {
-      std::shared_lock lock(s_managedWheelLock);
-      auto it = s_managedWheelClients.find(wheelIndex);
-      if (it != s_managedWheelClients.end()) {
-      return it->second.showLabel;
-      }
-      return false;
+      const WheelManagedInfo* info = GetManagedInfoForIndex(wheelIndex);
+      return info ? info->showLabel : false;
    }
 
    // Get managed wheel styling for rendering
@@ -188,15 +172,14 @@ namespace WheelerAPI
       ManagedWheelStyling styling;
       styling.isValid = false;
 
-      std::shared_lock lock(s_managedWheelLock);
-      auto it = s_managedWheelClients.find(wheelIndex);
-      if (it != s_managedWheelClients.end()) {
-      styling.labelFontSize = it->second.labelFontSize;
-      styling.labelColor = it->second.labelColor;
-      styling.labelOffsetY = it->second.labelOffsetY;
-      styling.indicatorText = it->second.indicatorText;
-      styling.indicatorActiveColor = it->second.indicatorActiveColor;
-      styling.indicatorInactiveColor = it->second.indicatorInactiveColor;
+      const WheelManagedInfo* info = GetManagedInfoForIndex(wheelIndex);
+      if (info) {
+      styling.labelFontSize = info->labelFontSize;
+      styling.labelColor = info->labelColor;
+      styling.labelOffsetY = info->labelOffsetY;
+      styling.indicatorText = info->indicatorText;
+      styling.indicatorActiveColor = info->indicatorActiveColor;
+      styling.indicatorInactiveColor = info->indicatorInactiveColor;
       styling.isValid = true;
       }
       return styling;
@@ -226,35 +209,8 @@ namespace WheelerAPI
       return info;
    }
 
-   // Helper to adjust managed wheel indices when wheels are inserted/removed
-   static void AdjustManagedIndicesAfterInsert(int32_t insertedAt)
-   {
-      std::unique_lock lock(s_managedWheelLock);
-      std::unordered_map<int32_t, ManagedWheelInfo> adjusted;
-      for (auto& [idx, info] : s_managedWheelClients) {
-      if (idx >= insertedAt) {
-        adjusted[idx + 1] = std::move(info);
-      } else {
-        adjusted[idx] = std::move(info);
-      }
-      }
-      s_managedWheelClients = std::move(adjusted);
-   }
-
-   static void AdjustManagedIndicesAfterRemove(int32_t removedAt)
-   {
-      std::unique_lock lock(s_managedWheelLock);
-      s_managedWheelClients.erase(removedAt);
-      std::unordered_map<int32_t, ManagedWheelInfo> adjusted;
-      for (auto& [idx, info] : s_managedWheelClients) {
-      if (idx > removedAt) {
-        adjusted[idx - 1] = std::move(info);
-      } else {
-        adjusted[idx] = std::move(info);
-      }
-      }
-      s_managedWheelClients = std::move(adjusted);
-   }
+   // (Managed indices no longer need adjusting on insert/remove: the metadata lives
+   // on the Wheel and moves with it, so there is no index-keyed side table to fix up.)
 
    // ============================================================================
    // API Implementation Functions
@@ -296,21 +252,10 @@ namespace WheelerAPI
       wheel->PushEmptyEntry();
       }
 
-      // Determine insert position
-      int32_t index;
-      if (config->position < 0 || config->position >= static_cast<int32_t>(wheels.size())) {
-      index = static_cast<int32_t>(wheels.size());
-      wheels.push_back(std::move(wheel));
-      } else {
-      index = config->position;
-      wheels.insert(wheels.begin() + index, std::move(wheel));
-      AdjustManagedIndicesAfterInsert(index);
-      }
-
-      // Track as managed with client name and styling settings
+      // Attach managed metadata directly to the wheel (resolving styling defaults),
+      // so identity travels with the wheel across any later reindexing.
       if (config->managed) {
-      std::unique_lock lock(s_managedWheelLock);
-      ManagedWheelInfo info;
+      WheelManagedInfo info;
       info.clientName = config->clientName ? config->clientName : "Unknown";
       info.showLabel = config->showLabel;
 
@@ -324,7 +269,18 @@ namespace WheelerAPI
       info.indicatorActiveColor = (config->indicatorActiveColor != 0) ? config->indicatorActiveColor : IM_COL32(0, 255, 255, 255);
       info.indicatorInactiveColor = (config->indicatorInactiveColor != 0) ? config->indicatorInactiveColor : IM_COL32(100, 200, 200, 180);
 
-      s_managedWheelClients[index] = std::move(info);
+      wheel->SetManagedInfo(std::move(info));
+      s_managedWheelCount.fetch_add(1, std::memory_order_relaxed);
+      }
+
+      // Determine insert position
+      int32_t index;
+      if (config->position < 0 || config->position >= static_cast<int32_t>(wheels.size())) {
+      index = static_cast<int32_t>(wheels.size());
+      wheels.push_back(std::move(wheel));
+      } else {
+      index = config->position;
+      wheels.insert(wheels.begin() + index, std::move(wheel));
       }
 
       DEBUG("WheelerAPI: Created managed wheel at index {} with {} entries (client: {}, showLabel: {})",
@@ -338,20 +294,16 @@ namespace WheelerAPI
       return Result::NotInitialized;
       }
 
-      // Lock ordering: always wheelLock first, then managedWheelLock
       std::unique_lock wheelLock(Wheeler::GetWheelDataLock());
       auto& wheels = Wheeler::GetWheels();
 
-      // Check if managed (under wheelLock to maintain ordering)
-      {
-      std::shared_lock lock(s_managedWheelLock);
-      if (s_managedWheelClients.find(wheelIndex) == s_managedWheelClients.end()) {
-        return Result::NotManagedWheel;
-      }
-      }
-
       if (wheelIndex < 0 || wheelIndex >= static_cast<int32_t>(wheels.size())) {
       return Result::InvalidWheelIndex;
+      }
+
+      // Managed state reads straight off the wheel — cannot be stale.
+      if (!wheels[wheelIndex]->IsManaged()) {
+      return Result::NotManagedWheel;
       }
 
       if (wheels.size() <= 1) {
@@ -359,7 +311,7 @@ namespace WheelerAPI
       }
 
       wheels.erase(wheels.begin() + wheelIndex);
-      AdjustManagedIndicesAfterRemove(wheelIndex);
+      s_managedWheelCount.fetch_sub(1, std::memory_order_relaxed);
 
       // Adjust active wheel index if needed
       int activeIdx = Wheeler::GetActiveWheelIndex();
@@ -371,10 +323,58 @@ namespace WheelerAPI
       return Result::OK;
    }
 
+   // Delete every managed wheel owned by a client in one shift-safe pass. Callers
+   // that track their own wheels by index (e.g. Huginn) can't safely delete them
+   // one-by-one, because each erase shifts the remaining indices; this removes them
+   // all at once, high-to-low, so no stale index is ever dereferenced. Returns the
+   // number of wheels deleted (>= 0), or a negative Result on error.
+   static int32_t API_DeleteManagedWheelsForClient(const char* clientName)
+   {
+      if (!s_initialized) {
+      return static_cast<int32_t>(Result::NotInitialized);
+      }
+      if (!clientName) {
+      return static_cast<int32_t>(Result::InternalError);
+      }
+
+      std::unique_lock wheelLock(Wheeler::GetWheelDataLock());
+      auto& wheels = Wheeler::GetWheels();
+
+      // Collect matching indices, then erase from the highest down so earlier
+      // indices stay valid as we go.
+      std::vector<int32_t> toDelete;
+      for (int32_t i = 0; i < static_cast<int32_t>(wheels.size()); ++i) {
+      const WheelManagedInfo* info = wheels[i]->GetManagedInfo();
+      if (info && info->clientName == clientName) {
+        toDelete.push_back(i);
+      }
+      }
+
+      // Never remove the last remaining wheel (Wheeler must keep >= 1).
+      int32_t deleted = 0;
+      for (auto it = toDelete.rbegin(); it != toDelete.rend(); ++it) {
+      if (wheels.size() <= 1) {
+        break;
+      }
+      wheels.erase(wheels.begin() + *it);
+      s_managedWheelCount.fetch_sub(1, std::memory_order_relaxed);
+      ++deleted;
+      }
+
+      int activeIdx = Wheeler::GetActiveWheelIndex();
+      if (activeIdx >= static_cast<int>(wheels.size())) {
+      Wheeler::SetActiveWheelIndex(static_cast<int>(wheels.size()) - 1);
+      }
+
+      DEBUG("WheelerAPI: Deleted {} managed wheel(s) for client '{}'", deleted, clientName);
+      return deleted;
+   }
+
    static bool API_IsManagedWheel(int32_t wheelIndex)
    {
-      std::shared_lock lock(s_managedWheelLock);
-      return s_managedWheelClients.find(wheelIndex) != s_managedWheelClients.end();
+      // Public entry — external callers don't hold the wheel-data lock, so take it.
+      std::shared_lock lock(Wheeler::GetWheelDataLock());
+      return GetManagedInfoForIndex(wheelIndex) != nullptr;
    }
 
    static int32_t API_GetWheelCount()
@@ -653,20 +653,15 @@ namespace WheelerAPI
       return Result::NotInitialized;
       }
 
-      // Verify it's a managed wheel
-      {
-      std::shared_lock lock(s_managedWheelLock);
-      if (s_managedWheelClients.find(wheelIndex) == s_managedWheelClients.end()) {
-        return Result::NotManagedWheel;
-      }
-      }
-
-      // Validate wheel and entry exist
+      // Verify it's a managed wheel and that the wheel/entry exist (single lock).
       {
       std::shared_lock lock(Wheeler::GetWheelDataLock());
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
         return Result::InvalidWheelIndex;
+      }
+      if (!wheel->IsManaged()) {
+        return Result::NotManagedWheel;
       }
       WheelEntry* entry = wheel->GetEntry(entryIndex);
       if (!entry) {
@@ -736,6 +731,7 @@ namespace WheelerAPI
       .UnregisterEditModeCallback = API_UnregisterEditModeCallback,
       .UnregisterWheelStateCallback = API_UnregisterWheelStateCallback,
       .SetManagedWheelEntrySubtext = API_SetManagedWheelEntrySubtext,
+      .DeleteManagedWheelsForClient = API_DeleteManagedWheelsForClient,
    };
 
 }  // namespace WheelerAPI

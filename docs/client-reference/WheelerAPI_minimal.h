@@ -20,7 +20,7 @@
 namespace WheelerAPI
 {
     /// API version - check this against IWheelerAPI::version
-    constexpr uint32_t API_VERSION = 2;
+    constexpr uint32_t API_VERSION = 3;
 
     /// Result codes returned by API functions
     enum class Result : int32_t
@@ -150,6 +150,9 @@ namespace WheelerAPI
         // --- v2: Entry Subtext ---
         /// Set subtext displayed below an entry's item name (managed wheels only)
         Result (*SetManagedWheelEntrySubtext)(int32_t wheelIndex, int32_t entryIndex, const SubtextConfig* config);
+
+        // v3: delete all managed wheels for a client in one shift-safe pass (version >= 3)
+        int32_t (*DeleteManagedWheelsForClient)(const char* clientName);
     };
 
 }  // namespace WheelerAPI

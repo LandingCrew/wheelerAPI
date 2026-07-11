@@ -34,7 +34,7 @@ namespace WheelerAPI
     // =========================================================================
     // API Version - Clients should check this matches or exceeds their needs
     // =========================================================================
-    constexpr uint32_t API_VERSION = 2;
+    constexpr uint32_t API_VERSION = 3;
 
     // =========================================================================
     // Result Codes
@@ -183,6 +183,13 @@ namespace WheelerAPI
         // --- v2: Entry Subtext ---
         // Set subtext displayed below an entry's item name (managed wheels only)
         Result (*SetManagedWheelEntrySubtext)(int32_t wheelIndex, int32_t entryIndex, const SubtextConfig* config);
+
+        // --- v3: Batch delete by client ---
+        // Delete ALL managed wheels owned by the given client in one shift-safe pass.
+        // Prefer over looping DeleteManagedWheel() with stored indices (which go stale
+        // as each delete shifts the rest). Only valid when version >= 3.
+        // @return number of wheels deleted (>= 0), or a negative Result on error
+        int32_t (*DeleteManagedWheelsForClient)(const char* clientName);
     };
 
 }  // namespace WheelerAPI
