@@ -21,6 +21,7 @@
 // IMPORTANT: Callbacks should execute quickly to avoid blocking the render loop.
 // If you need to do heavy processing, queue work to another thread.
 
+#include <cstddef>  // size_t
 #include <cstdint>
 
 #ifndef WHEELER_API
@@ -38,7 +39,12 @@ namespace WheelerAPI
    // v2: Added SetManagedWheelEntrySubtext()
    // v3: Added DeleteManagedWheelsForClient(); managed metadata moved onto the wheel
    //     (fixes stale-index desync on mid-session wheel insert/remove)
-   constexpr uint32_t API_VERSION = 3;
+   // v4: Added GetManagedWheelsForClient(). Managed wheels now survive Wheeler's
+   //     load-time reset instead of being destroyed with the user's own wheels.
+   //     BEHAVIOUR CHANGE: Wheeler no longer implicitly drops a client's wheels on
+   //     save load, so a client that recreates its wheels every load MUST call
+   //     DeleteManagedWheelsForClient() first or it will accumulate duplicates.
+   constexpr uint32_t API_VERSION = 4;
 
    // ============================================================================
    // Result Codes
@@ -209,6 +215,24 @@ namespace WheelerAPI
       // @param clientName The client name passed in WheelConfig::clientName
       // @return number of wheels deleted (>= 0), or a negative Result on error
       int32_t (*DeleteManagedWheelsForClient)(const char* clientName);
+
+      // --- v4: Batch lookup by client ---
+      // Read counterpart to DeleteManagedWheelsForClient(): answers "which wheel
+      // indices are mine?" from the one key that stays stable across reindexing.
+      // Use it to re-derive indices after IsManagedWheel() reports a stored index
+      // is no longer yours, instead of writing the wheel off for the session.
+      //
+      // Indices are written in ascending order and are valid only until the next
+      // wheel insert or removal — read them and use them promptly.
+      //
+      // @param clientName The client name passed in WheelConfig::clientName
+      // @param outIndices Buffer receiving up to maxCount indices; may be nullptr
+      // @param maxCount Capacity of outIndices, in elements
+      // @return TOTAL number of wheels managed for clientName (>= 0), which may
+      //         exceed maxCount, or a negative Result on error. Pass nullptr/0 to
+      //         query the count only; a return greater than maxCount means the
+      //         buffer was too small and only the first maxCount were written.
+      int32_t (*GetManagedWheelsForClient)(const char* clientName, int32_t* outIndices, size_t maxCount);
    };
 
    // ============================================================================

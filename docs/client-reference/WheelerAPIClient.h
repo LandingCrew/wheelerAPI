@@ -34,7 +34,7 @@ namespace WheelerAPI
     // =========================================================================
     // API Version - Clients should check this matches or exceeds their needs
     // =========================================================================
-    constexpr uint32_t API_VERSION = 3;
+    constexpr uint32_t API_VERSION = 4;
 
     // =========================================================================
     // Result Codes
@@ -190,6 +190,16 @@ namespace WheelerAPI
         // as each delete shifts the rest). Only valid when version >= 3.
         // @return number of wheels deleted (>= 0), or a negative Result on error
         int32_t (*DeleteManagedWheelsForClient)(const char* clientName);
+
+        // --- v4: Batch lookup by client ---
+        // Read counterpart to DeleteManagedWheelsForClient(): answers "which wheel
+        // indices are mine?". Use it to re-derive indices after IsManagedWheel()
+        // reports a stored index is no longer yours. Only valid when version >= 4.
+        // Indices are ascending and valid only until the next wheel insert/remove.
+        // @return TOTAL number of wheels managed for clientName (may exceed
+        //         maxCount, meaning the buffer was truncated), or a negative
+        //         Result on error. Pass nullptr/0 to query the count only.
+        int32_t (*GetManagedWheelsForClient)(const char* clientName, int32_t* outIndices, size_t maxCount);
     };
 
 }  // namespace WheelerAPI
@@ -275,6 +285,12 @@ public:
     /// Check if v2 features are available
     bool HasV2Features() const { return m_api && m_api->version >= 2; }
 
+    /// Check if v3 features are available (DeleteManagedWheelsForClient)
+    bool HasV3Features() const { return m_api && m_api->version >= 3; }
+
+    /// Check if v4 features are available (GetManagedWheelsForClient)
+    bool HasV4Features() const { return m_api && m_api->version >= 4; }
+
     /// Get raw API pointer (nullptr if not connected)
     WheelerAPI::IWheelerAPI* GetAPI() const { return m_api; }
 
@@ -330,6 +346,10 @@ public:
             return false;
         }
 
+        // Remember the label: it is the only key that survives reindexing, so it
+        // is what RecoverWheelIndex() uses to find this wheel again later.
+        m_clientName = config->clientName ? config->clientName : "";
+
         // Initialize slot tracking
         m_currentSlotFormIDs.resize(static_cast<size_t>(config->numEntries), 0);
 
@@ -339,17 +359,71 @@ public:
     /// Check if we have a managed wheel
     bool HasWheel() const { return m_wheelIndex >= 0; }
 
+    /// Re-derive our wheel index from our client name (v4).
+    ///
+    /// A stored index only stays correct until the next wheel insert or removal.
+    /// When IsManagedWheel(m_wheelIndex) turns false, call this rather than
+    /// assuming the wheel is gone: the label is stable, so if Wheeler still holds
+    /// a wheel under it, this finds it again.
+    ///
+    /// @return true if an index was recovered; false if we own no wheel (in which
+    ///         case m_wheelIndex is reset to -1 and the wheel must be recreated)
+    bool RecoverWheelIndex()
+    {
+        if (!HasV4Features() || m_clientName.empty()) {
+            return false;
+        }
+
+        int32_t index = -1;
+        int32_t count = m_api->GetManagedWheelsForClient(m_clientName.c_str(), &index, 1);
+        if (count <= 0) {
+            // count < 0 is an error code; count == 0 means Wheeler holds nothing
+            // under our label. Either way the stored index is not usable.
+            m_wheelIndex = -1;
+            return false;
+        }
+
+        m_wheelIndex = index;
+        return true;
+    }
+
+    /// Verify our stored index still points at our wheel, recovering it if not.
+    /// Cheap enough to call before a batch of updates.
+    /// @return true if m_wheelIndex is usable afterwards
+    bool EnsureWheelIndexValid()
+    {
+        if (!m_api) {
+            return false;
+        }
+        if (m_wheelIndex >= 0 && m_api->IsManagedWheel(m_wheelIndex)) {
+            return true;
+        }
+        return RecoverWheelIndex();
+    }
+
     /// Get the wheel index
     int32_t GetWheelIndex() const { return m_wheelIndex; }
 
     /// Delete the managed wheel
     void DeleteWheel()
     {
-        if (m_api && m_wheelIndex >= 0) {
-            m_api->DeleteManagedWheel(m_wheelIndex);
-            m_wheelIndex = -1;
-            m_currentSlotFormIDs.clear();
+        if (!m_api) {
+            return;
         }
+
+        // Prefer the label-keyed delete: it does not depend on m_wheelIndex still
+        // being accurate, and it sweeps up any wheel we created under this name
+        // but lost track of. Wheeler keeps managed wheels across a save load
+        // (v4+), so failing to clean up here is what causes duplicates.
+        if (HasV3Features() && !m_clientName.empty()) {
+            m_api->DeleteManagedWheelsForClient(m_clientName.c_str());
+        } else if (m_wheelIndex >= 0) {
+            m_api->DeleteManagedWheel(m_wheelIndex);
+        }
+
+        m_wheelIndex = -1;
+        m_clientName.clear();
+        m_currentSlotFormIDs.clear();
     }
 
     // =========================================================================
@@ -519,6 +593,7 @@ private:
 
     WheelerAPI::IWheelerAPI* m_api = nullptr;
     int32_t m_wheelIndex = -1;
+    std::string m_clientName;  // stable key for RecoverWheelIndex()
     std::vector<uint32_t> m_currentSlotFormIDs;
 };
 

@@ -1,10 +1,59 @@
-# Wheeler API - Client Implementation Reference (v2)
+# Wheeler API - Client Implementation Reference (v4)
 
 This document describes how external plugins (like On Cue) integrate with Wheeler.
+
+> **Note:** the prose and examples below outside the v3/v4 sections still describe v2. They remain correct for the calls they cover, but they predate `DeleteManagedWheelsForClient` (v3) and `GetManagedWheelsForClient` (v4) — prefer the label-keyed calls documented here over the index-keyed ones shown in the older examples.
 
 ## Overview
 
 Clients access Wheeler's functionality through a single exported function that returns an interface struct. This approach requires only one `GetProcAddress` call and provides type-safe access to all API functions.
+
+## What's New in v4
+
+**Wheeler no longer destroys your wheels on save load.** Managed wheels used to be wiped along with the user's own wheels during Wheeler's load-time reset. Because managed wheels are deliberately excluded from the co-save, there was nothing to restore them from: a client whose creation happened to run before that reset lost its wheels for the rest of the session, with no way to detect or repair it. Managed wheels now survive the reset.
+
+**This is a behaviour change you must account for.** Wheeler will no longer implicitly clean up after you, so a client that recreates its wheels on every `kPostLoadGame` **must** call `DeleteManagedWheelsForClient()` first, or it will accumulate a duplicate set of wheels on every load.
+
+```cpp
+// In your kPostLoadGame handler, before creating anything:
+g_wheelerAPI->DeleteManagedWheelsForClient("MyMod");
+```
+
+**New: `GetManagedWheelsForClient()`** — the read counterpart to the label-keyed delete. A stored wheel index is only valid until the next wheel insert or removal; your client name is the one key that stays stable. When `IsManagedWheel()` says a stored index is no longer yours, re-derive it instead of giving up:
+
+```cpp
+// Returns the TOTAL number of wheels managed for this client, which may exceed
+// maxCount (meaning the buffer was truncated). Negative values are Result codes.
+int32_t (*GetManagedWheelsForClient)(const char* clientName,
+                                     int32_t* outIndices, size_t maxCount);
+```
+
+```cpp
+bool EnsureMyWheelsValid()
+{
+    if (g_wheelerAPI->version < 4) {
+        return false;  // v4 call unavailable; fall back to recreating
+    }
+
+    // Query the count first, then read the indices.
+    int32_t count = g_wheelerAPI->GetManagedWheelsForClient("MyMod", nullptr, 0);
+    if (count <= 0) {
+        return false;  // error, or Wheeler holds nothing under our label
+    }
+
+    std::vector<int32_t> indices(static_cast<size_t>(count));
+    g_wheelerAPI->GetManagedWheelsForClient("MyMod", indices.data(), indices.size());
+    g_myWheelIndices = std::move(indices);
+    return true;
+}
+```
+
+Indices come back in ascending order and are only valid until the next wheel insert or removal — read them and use them promptly.
+
+## What's New in v3
+
+- **`DeleteManagedWheelsForClient(clientName)`** - delete all of your wheels in one shift-safe pass. Prefer this over looping `DeleteManagedWheel()` with stored indices: each single delete shifts the remaining indices, so stored indices go stale mid-loop and wheels get orphaned.
+- Managed wheel metadata moved onto the wheel itself, so it can no longer desync from the wheel's position when the list is reindexed.
 
 ## What's New in v2
 
@@ -377,7 +426,14 @@ void SafeAddItem(int32_t entry, uint32_t formID)
 ```cpp
 void Shutdown()
 {
-    if (g_wheelerAPI && g_myWheelIndex >= 0) {
+    // v3+: prefer the label-keyed delete. It does not depend on your stored index
+    // still being accurate, and it sweeps up any wheel you created under this name
+    // but lost track of. Since v4 Wheeler keeps managed wheels across a save load,
+    // so skipping this is what leaves duplicates behind.
+    if (g_wheelerAPI && g_wheelerAPI->version >= 3) {
+        g_wheelerAPI->DeleteManagedWheelsForClient("MyMod");
+        g_myWheelIndex = -1;
+    } else if (g_wheelerAPI && g_myWheelIndex >= 0) {
         g_wheelerAPI->DeleteManagedWheel(g_myWheelIndex);
         g_myWheelIndex = -1;
     }
@@ -510,7 +566,7 @@ namespace OnCue::Wheeler
 ```cpp
 namespace WheelerAPI
 {
-    constexpr uint32_t API_VERSION = 2;
+    constexpr uint32_t API_VERSION = 4;
 
     enum class Result : int32_t
     {

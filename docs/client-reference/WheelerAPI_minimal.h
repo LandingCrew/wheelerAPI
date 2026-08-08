@@ -15,12 +15,13 @@
 // =============================================================================
 
 #pragma once
+#include <cstddef>  // size_t
 #include <cstdint>
 
 namespace WheelerAPI
 {
     /// API version - check this against IWheelerAPI::version
-    constexpr uint32_t API_VERSION = 3;
+    constexpr uint32_t API_VERSION = 4;
 
     /// Result codes returned by API functions
     enum class Result : int32_t
@@ -153,6 +154,11 @@ namespace WheelerAPI
 
         // v3: delete all managed wheels for a client in one shift-safe pass (version >= 3)
         int32_t (*DeleteManagedWheelsForClient)(const char* clientName);
+
+        // v4: look up the wheel indices currently managed for a client (version >= 4).
+        // Returns the TOTAL match count (may exceed maxCount), or a negative Result.
+        // Pass nullptr/0 to query the count only.
+        int32_t (*GetManagedWheelsForClient)(const char* clientName, int32_t* outIndices, size_t maxCount);
     };
 
 }  // namespace WheelerAPI
