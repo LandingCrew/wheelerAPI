@@ -86,8 +86,10 @@ void SerializationEntry::Load(SKSE::SerializationInterface* a_intfc)
    INFO("Read str: {}", readBuffer);
    try {
       nlohmann::json j_wheeler = nlohmann::json::parse(readBuffer);
-      Wheeler::Clear();
-      Wheeler::SerializeFromJsonObj(j_wheeler, a_intfc);
+      // Single call: clear + repopulate happen under one exclusive hold of the
+      // wheel-data lock, so a client creating a managed wheel on another thread
+      // cannot interleave with the repopulate.
+      Wheeler::ReloadFromJsonObj(j_wheeler, a_intfc);
    } catch (const std::exception& e) {
       INFO("Failed to parse json: {}", e.what());
       return;

@@ -196,17 +196,39 @@ void Wheeler::Update(float a_deltaTime)
 void Wheeler::Clear()
 {
    std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
+   clearUnmanagedLocked();
+}
+
+void Wheeler::clearUnmanagedLocked()
+{
    if (_state != WheelState::KClosed) {
       CloseWheeler();  // force close menu, since we're loading items
    }
    if (_editMode) {
       exitEditMode();
    }
-   // clean up old wheels
+
+   // Keep client-managed wheels alive. SerializeIntoJsonObj deliberately omits
+   // them from the co-save, so unlike the user's own wheels they cannot be
+   // restored afterwards — destroying one here strands its owner with indices
+   // that no longer resolve and no way to re-derive them. Clients delete their
+   // own wheels explicitly via DeleteManagedWheelsForClient().
+   std::vector<std::unique_ptr<Wheel>> kept;
    for (auto& wheel : _wheels) {
+      if (!wheel) {
+      continue;
+      }
+      if (wheel->IsManaged()) {
+      kept.push_back(std::move(wheel));
+      } else {
       wheel->Clear();
+      }
    }
-   _wheels.clear();
+   _wheels = std::move(kept);
+
+   // Whatever the caller repopulates will start after the survivors; until then
+   // the only valid index is the first kept wheel (or none, if there are none).
+   _activeWheelIdx = 0;
 }
 
 void Wheeler::ToggleWheeler()
@@ -805,14 +827,32 @@ bool Wheeler::IsWheelerOpen() { return _state != WheelState::KClosed; }
 
 bool Wheeler::IsInEditMode() { return _editMode; }
 
-void Wheeler::SerializeFromJsonObj(const nlohmann::json& j_wheeler, SKSE::SerializationInterface* a_intfc)
+void Wheeler::ReloadFromJsonObj(const nlohmann::json& j_wheeler, SKSE::SerializationInterface* a_intfc)
 {
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
+   clearUnmanagedLocked();
+   deserializeLocked(j_wheeler, a_intfc);
+}
+
+void Wheeler::deserializeLocked(const nlohmann::json& j_wheeler, SKSE::SerializationInterface* a_intfc)
+{
+   // Managed wheels survived clearUnmanagedLocked() and now occupy the front of
+   // _wheels. The saved indices were written relative to the unmanaged wheels
+   // alone (SerializeIntoJsonObj skips managed ones), so the restored active
+   // index has to be shifted past the survivors to mean the same wheel again.
+   const int managedOffset = static_cast<int>(_wheels.size());
+
    nlohmann::json j_wheels = j_wheeler["wheels"];
    for (const auto& j_wheel : j_wheels) {
       std::unique_ptr<Wheel> wheel = Wheel::SerializeFromJsonObj(j_wheel, a_intfc);
       _wheels.push_back(std::move(wheel));
    }
-   SetActiveWheelIndex(j_wheeler["activewheel"]);
+
+   int activeIdx = managedOffset + j_wheeler["activewheel"].get<int>();
+   if (activeIdx < 0 || activeIdx >= static_cast<int>(_wheels.size())) {
+      activeIdx = 0;
+   }
+   _activeWheelIdx = activeIdx;
 }
 
 void Wheeler::SerializeIntoJsonObj(nlohmann::json& j_wheeler)
@@ -851,19 +891,22 @@ void Wheeler::SetupDefaultWheels()
 {
    const int defaultWheelNum = 2;
    const int defaultEntryNum = 4;
-   Wheeler::Clear();
-   int wheelIdx = 0;
-   while (wheelIdx < defaultWheelNum) {
-      Wheeler::PushWheel();
-      int entryIdx = 0;
-      while (entryIdx < defaultEntryNum) {
-      _wheels[wheelIdx]->PushEmptyEntry();
-      entryIdx++;
-      }
-      wheelIdx++;
-   }
-   Wheeler::SetActiveWheelIndex(0);
 
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
+   clearUnmanagedLocked();
+
+   // Managed wheels are kept by the clear above, so the defaults land after them
+   // — build each wheel before pushing it rather than indexing _wheels from 0,
+   // which would otherwise reach into a surviving client wheel.
+   const int firstDefaultIdx = static_cast<int>(_wheels.size());
+   for (int wheelIdx = 0; wheelIdx < defaultWheelNum; wheelIdx++) {
+      auto wheel = std::make_unique<Wheel>();
+      for (int entryIdx = 0; entryIdx < defaultEntryNum; entryIdx++) {
+      wheel->PushEmptyEntry();
+      }
+      _wheels.push_back(std::move(wheel));
+   }
+   _activeWheelIdx = firstDefaultIdx;
 }
 
 inline ImVec2 Wheeler::getWheelCenter()

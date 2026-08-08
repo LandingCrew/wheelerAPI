@@ -370,6 +370,41 @@ namespace WheelerAPI
       return deleted;
    }
 
+   // Read counterpart to API_DeleteManagedWheelsForClient. Clients store wheel
+   // indices, but an index is only meaningful until the next insert/remove; the
+   // client name is the one key that survives. This lets a client that has lost
+   // track of its indices re-derive them rather than give up on the wheel.
+   // Returns the total match count (which may exceed maxCount), or a negative
+   // Result on error.
+   static int32_t API_GetManagedWheelsForClient(const char* clientName, int32_t* outIndices, size_t maxCount)
+   {
+      if (!s_initialized) {
+      return static_cast<int32_t>(Result::NotInitialized);
+      }
+      if (!clientName) {
+      return static_cast<int32_t>(Result::InternalError);
+      }
+
+      std::shared_lock wheelLock(Wheeler::GetWheelDataLock());
+      auto& wheels = Wheeler::GetWheels();
+
+      int32_t found = 0;
+      for (int32_t i = 0; i < static_cast<int32_t>(wheels.size()); ++i) {
+      const WheelManagedInfo* info = wheels[i]->GetManagedInfo();
+      if (!info || info->clientName != clientName) {
+        continue;
+      }
+      // Keep counting past the buffer so the caller can tell it was truncated.
+      if (outIndices && static_cast<size_t>(found) < maxCount) {
+        outIndices[found] = i;
+      }
+      ++found;
+      }
+
+      DEBUG("WheelerAPI: {} managed wheel(s) found for client '{}'", found, clientName);
+      return found;
+   }
+
    static bool API_IsManagedWheel(int32_t wheelIndex)
    {
       // Public entry — external callers don't hold the wheel-data lock, so take it.
@@ -732,6 +767,7 @@ namespace WheelerAPI
       .UnregisterWheelStateCallback = API_UnregisterWheelStateCallback,
       .SetManagedWheelEntrySubtext = API_SetManagedWheelEntrySubtext,
       .DeleteManagedWheelsForClient = API_DeleteManagedWheelsForClient,
+      .GetManagedWheelsForClient = API_GetManagedWheelsForClient,
    };
 
 }  // namespace WheelerAPI

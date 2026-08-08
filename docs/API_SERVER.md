@@ -23,7 +23,7 @@ extern "C" __declspec(dllexport) IWheelerAPI* GetWheelerAPI();
 ```cpp
 struct IWheelerAPI
 {
-    uint32_t version;  // API_VERSION = 2, bump on breaking changes
+    uint32_t version;  // API_VERSION = 4, bump on breaking changes
 
     // Status
     bool (*IsInitialized)();
@@ -129,11 +129,13 @@ Implementation checklist:
 
 ### Managed Wheel Tracking
 
-Managed wheels are owned by clients, not the user. Track both client name and styling:
+Managed wheels are owned by clients, not the user. Track both client name and styling.
+
+Since v3 this metadata lives **on the `Wheel` itself** (`Wheel::GetManagedInfo()`), not in an index-keyed side table. A side table desyncs the moment the wheel list is reindexed by an insert or removal; storing it on the wheel means identity travels with the wheel:
 
 ```cpp
-// Internal tracking structure
-struct ManagedWheelInfo
+// Attached to each Wheel as std::optional<WheelManagedInfo>
+struct WheelManagedInfo
 {
     std::string clientName;
     bool showLabel;
@@ -148,16 +150,24 @@ struct ManagedWheelInfo
     uint32_t indicatorActiveColor = IM_COL32(0, 255, 255, 255);    // Cyan
     uint32_t indicatorInactiveColor = IM_COL32(100, 200, 200, 180); // Dim cyan
 };
-
-static std::unordered_map<int32_t, ManagedWheelInfo> s_managedWheelClients;
-static std::shared_mutex s_managedWheelLock;
 ```
 
 Managed wheel properties:
 - **Not persisted** to save files or user config
 - **Not editable** by user in edit mode (skip in edit UI, or show as locked)
-- **Tracked separately** so Wheeler knows which wheels to save
+- **Not destroyed** by Wheeler's load-time reset (see below)
 - **Display label** when `showLabel` is true and wheel is active
+
+#### Lifecycle: never destroy a managed wheel implicitly (v4)
+
+"Not persisted" and "destroyed on load" cannot both hold. Because managed wheels are excluded from the co-save, a reset that wipes them is **unrecoverable** — there is nothing left to deserialize them back from, and the owning client is left holding indices that no longer resolve.
+
+`Wheeler::Clear()` therefore keeps managed wheels and destroys only the user's own, compacting the survivors to the front of `_wheels`. Two consequences for anyone touching this code:
+
+- The saved active-wheel index is written relative to the unmanaged wheels alone (`SerializeIntoJsonObj` skips managed ones), so on restore it must be shifted past the surviving managed wheels to mean the same wheel again.
+- Anything that rebuilds `_wheels` from index 0 after a clear (e.g. `SetupDefaultWheels()`) must start from `_wheels.size()`, not 0, or it will reach into a surviving client wheel.
+
+Clear-then-repopulate must also happen under a **single** exclusive hold of the wheel-data lock (`Wheeler::ReloadFromJsonObj`). Releasing between the two leaves a window in which a client calling `CreateManagedWheel()` from another thread races the repopulate on the same vector.
 
 ### Entry Subtext Storage (v2)
 

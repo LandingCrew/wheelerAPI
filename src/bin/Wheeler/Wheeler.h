@@ -24,8 +24,14 @@ public:
    static void Update(float a_deltaTime);
    
    /// <summary>
-   /// Resets everything, freeing wheels and their memebers in the hierarchy.
-   /// must be called prior to reloading the wheels.
+   /// Resets the user's wheels, freeing them and their members in the hierarchy.
+   /// Must be called prior to reloading the wheels.
+   ///
+   /// Client-managed wheels (created through WheelerAPI) are deliberately NOT
+   /// destroyed: they are owned by the client that created them and are excluded
+   /// from the co-save by SerializeIntoJsonObj, so wiping one here would be
+   /// unrecoverable — there is nothing left to deserialize it back from. Clients
+   /// drop their own wheels with DeleteManagedWheelsForClient().
    /// </summary>
    static void Clear();
 
@@ -133,7 +139,14 @@ public:
    static bool IsWheelerOpen();
    static bool IsInEditMode();
 
-   static void SerializeFromJsonObj(const nlohmann::json& a_json, SKSE::SerializationInterface* a_intfc);
+   /// <summary>
+   /// Replace the user's wheels with the ones described by a_json, as a single
+   /// atomic step under the wheel-data lock. Splitting this into a separate
+   /// Clear() plus deserialize would leave a window in which a client calling
+   /// CreateManagedWheel() from another thread races the repopulate on _wheels.
+   /// Managed wheels survive and keep their relative order at the front.
+   /// </summary>
+   static void ReloadFromJsonObj(const nlohmann::json& a_json, SKSE::SerializationInterface* a_intfc);
    static void SerializeIntoJsonObj(nlohmann::json& a_json);
 
    /// <summary>
@@ -208,6 +221,19 @@ private:
 
    static void enterEditMode();
    static void exitEditMode();
+
+   /// <summary>
+   /// Body of Clear(). Caller must already hold _wheelDataLock exclusively.
+   /// Destroys every unmanaged wheel and compacts the surviving managed wheels
+   /// to the front of _wheels, preserving their relative order.
+   /// </summary>
+   static void clearUnmanagedLocked();
+
+   /// <summary>
+   /// Body of ReloadFromJsonObj(). Caller must already hold _wheelDataLock
+   /// exclusively, and must have called clearUnmanagedLocked() first.
+   /// </summary>
+   static void deserializeLocked(const nlohmann::json& a_json, SKSE::SerializationInterface* a_intfc);
 
    static float getCursorRadiusMax();
 };
