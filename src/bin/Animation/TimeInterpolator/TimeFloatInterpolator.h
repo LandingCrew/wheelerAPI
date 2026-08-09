@@ -10,39 +10,39 @@
 class TimeFloatInterpolator
 {
 private:
-	std::atomic<double> value;
-	std::atomic<double> target;
-	std::atomic<double> duration;
-	std::atomic<double> elapsedTime;
+   std::atomic<double> value;
+   std::atomic<double> target;
+   std::atomic<double> duration;
+   std::atomic<double> elapsedTime;
 
 public:
-	TimeFloatInterpolator(double initialValue);
-	TimeFloatInterpolator(double initialValue, std::function<void()> callback);
-	TimeFloatInterpolator();
-	~TimeFloatInterpolator();
+   TimeFloatInterpolator(double initialValue);
+   TimeFloatInterpolator(double initialValue, std::function<void()> callback);
+   TimeFloatInterpolator();
+   ~TimeFloatInterpolator();
 
-	void InterpolateTo(double targetValue, double interpolDuration);
+   void InterpolateTo(double targetValue, double interpolDuration);
 
-	/// <summary>
-	/// Push a callback function to the interpolator, which will be invoked one the interpolate finishes interpolating.
-	/// Note that the callback function does not run on the imgui thread.
-	/// </summary>
-	/// <param name="callback"></param>
-	void PushCallback(std::function<void()> callback);
+   /// <summary>
+   /// Push a callback function to the interpolator, which will be invoked one the interpolate finishes interpolating.
+   /// Note that the callback function does not run on the imgui thread.
+   /// </summary>
+   /// <param name="callback"></param>
+   void PushCallback(std::function<void()> callback);
 
-	// Update the interpolator's value based on a delta. Only TimeFloatInterpolatorManager may call it.
-	// returns whether the interpolator reaches its target value, which signals that it should be removed from the manager
-	bool Update(double dt);
+   // Update the interpolator's value based on a delta. Only TimeFloatInterpolatorManager may call it.
+   // returns whether the interpolator reaches its target value, which signals that it should be removed from the manager
+   bool Update(double dt);
 
-	double GetValue() const;
+   double GetValue() const;
 
-	void ForceFinish(bool wantCallback = true);
+   void ForceFinish(bool wantCallback = true);
 
-	void SetValue(double value);
+   void SetValue(double value);
 
-	void ForceValue(double value);
+   void ForceValue(double value);
 
-	std::vector<std::function<void()>> _callbacks;
+   std::vector<std::function<void()>> _callbacks;
 };
 
 ////PROMPT:
@@ -51,9 +51,9 @@ public:
 ////
 ////TimeFloatInterpolator contains the following method:
 ////public:
-////	void InterpolateTo(float target, float duration);
-////	void Update(float dt);
-////	float GetValue() const;
+////   void InterpolateTo(float target, float duration);
+////   void Update(float dt);
+////   float GetValue() const;
 ////InterpolateTo() starts a new job for the interpolator which will slowly change its value towards target for DURATION. 
 ////
 ////now, first code time floatinterpolator, then timefloatinterpolatormanager.

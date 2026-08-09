@@ -3,20 +3,21 @@
 class WheelItemSpell : public WheelItem // spell AND power
 {
 public:
-	WheelItemSpell() = delete;
-	WheelItemSpell(RE::SpellItem* a_spell);
-	virtual void DrawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs) override;
-	virtual void DrawHighlight(ImVec2 a_center, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs) override;
-	virtual bool IsActive(RE::TESObjectREFR::InventoryItemMap& a_inv) override;
-	virtual bool IsAvailable(RE::TESObjectREFR::InventoryItemMap& a_inv) override;
-	virtual void ActivateItemSecondary() override;
-	virtual void ActivateItemPrimary() override;
-	virtual void SerializeIntoJsonObj(nlohmann::json& a_json) override;
-	virtual void ActivateItemSpecial() override;
+   WheelItemSpell() = delete;
+   WheelItemSpell(RE::SpellItem* a_spell);
+   virtual void DrawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs) override;
+   virtual void DrawHighlight(ImVec2 a_center, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs) override;
+   virtual bool IsActive(RE::TESObjectREFR::InventoryItemMap& a_inv) override;
+   virtual bool IsAvailable(RE::TESObjectREFR::InventoryItemMap& a_inv) override;
+   virtual void ActivateItemSecondary() override;
+   virtual void ActivateItemPrimary() override;
+   virtual void SerializeIntoJsonObj(nlohmann::json& a_json) override;
+   virtual void ActivateItemSpecial() override;
+   virtual RE::FormID GetFormID() const override { return _spell ? _spell->GetFormID() : 0; }
 
-	static inline const char* ITEM_TYPE_STR = "WheelItemSpell";
+   static inline const char* ITEM_TYPE_STR = "WheelItemSpell";
 
 private:
-	bool isPower();
-	RE::SpellItem* _spell = nullptr;
+   bool isPower();
+   RE::SpellItem* _spell = nullptr;
 };

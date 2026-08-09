@@ -8,20 +8,20 @@
 class TimeColorInterpolator
 {
 private:
-	TimeFloatInterpolator redInterpolator;
-	TimeFloatInterpolator greenInterpolator;
-	TimeFloatInterpolator blueInterpolator;
-	TimeFloatInterpolator alphaInterpolator;
+   TimeFloatInterpolator redInterpolator;
+   TimeFloatInterpolator greenInterpolator;
+   TimeFloatInterpolator blueInterpolator;
+   TimeFloatInterpolator alphaInterpolator;
 
 public:
-	TimeColorInterpolator();
-	TimeColorInterpolator(const ImU32& targetColor);
+   TimeColorInterpolator();
+   TimeColorInterpolator(const ImU32& targetColor);
 
-	void InterpolateTo(const ImU32& targetColor, float duration);
+   void InterpolateTo(const ImU32& targetColor, float duration);
 
-	uint32_t GetRed();
-	uint32_t GetGreen();
-	uint32_t GetBlue();
-	uint32_t GetAlpha();
-	uint32_t GetColor();
+   uint32_t GetRed();
+   uint32_t GetGreen();
+   uint32_t GetBlue();
+   uint32_t GetAlpha();
+   uint32_t GetColor();
 };

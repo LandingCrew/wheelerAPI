@@ -4,89 +4,109 @@
 #include "imgui.h"
 namespace Utils
 {
-	namespace Slot
-	{
-		RE::BGSEquipSlot* GetLeftHandSlot();
-		RE::BGSEquipSlot* GetVoiceSlot();
-		RE::BGSEquipSlot* GetRightHandSlot();
-		void CleanSlot(RE::PlayerCharacter* a_pc, RE::BGSEquipSlot* a_slot);
-		void UnEquipSpell(RE::PlayerCharacter* pc, RE::SpellItem* spell, int hand);
-		void UnEquipShout(RE::PlayerCharacter* pc, RE::TESShout* shout);
-	}
+   namespace Slot
+   {
+      RE::BGSEquipSlot* GetLeftHandSlot();
+      RE::BGSEquipSlot* GetVoiceSlot();
+      RE::BGSEquipSlot* GetRightHandSlot();
+      void CleanSlot(RE::PlayerCharacter* a_pc, RE::BGSEquipSlot* a_slot);
+      void UnEquipSpell(RE::PlayerCharacter* pc, RE::SpellItem* spell, int hand);
+      void UnEquipShout(RE::PlayerCharacter* pc, RE::TESShout* shout);
+   }
 
-	namespace Time
-	{
-		float GGTM();
-		void SGTM(float a_in);
-	}
+   namespace Time
+   {
+      float GGTM();
+      void SGTM(float a_in);
+   }
 
-	namespace Magic
-	{
-		void GetMagicItemDescription(RE::ItemCard* a_itemCard, RE::MagicItem* a_magicItem, RE::BSString& a_str);
+   namespace Magic
+   {
+      void GetMagicItemDescription(RE::ItemCard* a_itemCard, RE::MagicItem* a_magicItem, RE::BSString& a_str);
 
-		void GetMagicItemDescription(RE::MagicItem* a_magicItem, std::string& a_buf);
-	}
+      void GetMagicItemDescription(RE::MagicItem* a_magicItem, std::string& a_buf);
+   }
 
-	namespace Inventory
-	{
-		std::pair<RE::EnchantmentItem*, float> GetEntryEnchantAndHealth(const std::unique_ptr<RE::InventoryEntryData>& a_invEntry);
+   namespace Inventory
+   {
+      std::pair<RE::EnchantmentItem*, float> GetEntryEnchantAndHealth(const std::unique_ptr<RE::InventoryEntryData>& a_invEntry);
 
-		void GetEntryExtraDataLists(std::vector<RE::ExtraDataList*>& r_ret, const std::unique_ptr<RE::InventoryEntryData>& a_invEntry);
-		
-		enum class Hand
-		{
-			Left,
-			Right,
-			Both,
-			None
-		};
-		Hand GetWeaponEquippedHand(RE::Actor* a_actor, RE::TESObjectWEAP* a_weapon, uint32_t a_uniqueID, bool itemClean = false);
+      void GetEntryExtraDataLists(std::vector<RE::ExtraDataList*>& r_ret, const std::unique_ptr<RE::InventoryEntryData>& a_invEntry);
+      
+      enum class Hand
+      {
+      Left,
+      Right,
+      Both,
+      None
+      };
+      Hand GetWeaponEquippedHand(RE::Actor* a_actor, RE::TESObjectWEAP* a_weapon, uint32_t a_uniqueID, bool itemClean = false);
 
-		RE::InventoryEntryData* GetSelectedItemIninventory(RE::InventoryMenu* a_invMenu);
-		RE::TESForm* GetSelectedFormInMagicMenu(RE::MagicMenu* a_magMen);
+      RE::InventoryEntryData* GetSelectedItemIninventory(RE::InventoryMenu* a_invMenu);
+      RE::TESForm* GetSelectedFormInMagicMenu(RE::MagicMenu* a_magMen);
 
-		static inline RE::InventoryEntryData* sub_1401d5ba0(RE::InventoryEntryData* a_ptr, RE::TESBoundObject* a_obj, int count)
-		{
-			using func_t = RE::InventoryEntryData* (*)(RE::InventoryEntryData*, RE::TESBoundObject*, int);
-			REL::Relocation<func_t> func{ RELOCATION_ID(10798, 10854) };
-			return func(a_ptr, a_obj, count);
-		}
+      static inline RE::InventoryEntryData* sub_1401d5ba0(RE::InventoryEntryData* a_ptr, RE::TESBoundObject* a_obj, int count)
+      {
+      using func_t = RE::InventoryEntryData* (*)(RE::InventoryEntryData*, RE::TESBoundObject*, int);
+      REL::Relocation<func_t> func{ RELOCATION_ID(10798, 10854) };
+      return func(a_ptr, a_obj, count);
+      }
 
-		inline RE::InventoryEntryData* MakeInventoryEntryData(RE::TESBoundObject* a_obj)
-		{
-			RE::InventoryEntryData* ptr = (RE::InventoryEntryData*)RE::MemoryManager::GetSingleton()->Allocate(24, 0, true);
-			ptr = sub_1401d5ba0(ptr, a_obj, 1);
-			return ptr;
-		}
+      inline RE::InventoryEntryData* MakeInventoryEntryData(RE::TESBoundObject* a_obj)
+      {
+      RE::InventoryEntryData* ptr = (RE::InventoryEntryData*)RE::MemoryManager::GetSingleton()->Allocate(24, 0, true);
+      ptr = sub_1401d5ba0(ptr, a_obj, 1);
+      return ptr;
+      }
 
-	}
-	
-	namespace Workaround
-	{
-		inline void* NiMemAlloc_1400F6B40(int size)
-		{
-			using func_t = void* (*)(int);
-			REL::Relocation<func_t> func{ RELOCATION_ID(10798, 10854) };
-			return func(size);
-		}
-	}
+   }
+   
+   namespace Workaround
+   {
+      inline void* NiMemAlloc_1400F6B40(int size)
+      {
+      using func_t = void* (*)(int);
+      REL::Relocation<func_t> func{ RELOCATION_ID(10798, 10854) };
+      return func(size);
+      }
+   }
 
-	namespace Color
-	{
-		inline void MultAlpha(ImU32& a_u32, double a_mult)
-		{
-			a_u32 = (a_u32 & 0x00FFFFFF) | (static_cast<ImU32>(static_cast<double>(a_u32 >> 24) * a_mult) << 24);
-		}
-	};
+   namespace Color
+   {
+      inline void MultAlpha(ImU32& a_u32, double a_mult)
+      {
+      a_u32 = (a_u32 & 0x00FFFFFF) | (static_cast<ImU32>(static_cast<double>(a_u32 >> 24) * a_mult) << 24);
+      }
+   };
 
-	namespace Math
-	{
-		const RE::NiPoint3 HORIZONTAL_AXIS = { 0.0f, 0.0f, 1.0f }; 
-		const RE::NiPoint3 VERTICAL_AXIS = { 1.0f, 0.0f, 0.0f };
+   namespace Math
+   {
+      const RE::NiPoint3 HORIZONTAL_AXIS = { 0.0f, 0.0f, 1.0f }; 
+      const RE::NiPoint3 VERTICAL_AXIS = { 1.0f, 0.0f, 0.0f };
 
-		RE::NiMatrix3 MatrixFromAxisAngle(float theta, const RE::NiPoint3& axis = HORIZONTAL_AXIS);
-	}
+      RE::NiMatrix3 MatrixFromAxisAngle(float theta, const RE::NiPoint3& axis = HORIZONTAL_AXIS);
+   }
 
-	void NotificationMessage(std::string a_message);
+   void NotificationMessage(std::string a_message);
+
+   // Safe name retrieval for consumable items.
+   // After consuming custom potions (dynamic forms), GetName() can return
+   // dangling pointers (e.g. 0x0000006a) causing CTD in fmt::format/ImGui.
+   // This validates the pointer before dereferencing.
+   inline const char* SafeGetName(RE::TESForm* a_form, const char* a_fallback = "???")
+   {
+      if (!a_form) {
+         return a_fallback;
+      }
+      const auto fullName = a_form->As<RE::TESFullName>();
+      if (!fullName) {
+         return a_fallback;
+      }
+      const char* name = fullName->GetFullName();
+      if (!name || reinterpret_cast<std::uintptr_t>(name) < 0x10000 || *name == '\0') {
+         return a_fallback;
+      }
+      return name;
+   }
 
 }
