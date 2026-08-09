@@ -7,26 +7,18 @@
 /// are actually for — the vanilla inventory does nothing when you select one.
 /// </summary>
 ///
-/// TODO: a slot remembers one base form, but a gem changes form when it is
-/// filled, so the slot can end up pointing at a form the player never has.
+/// A slot holds one base form, deliberately. Note that in vanilla "Grand Soul
+/// Gem" empty and "Grand Soul Gem" filled are two separate forms — same name in
+/// the UI, different FormIDs, linked by TESSoulGem::linkedSoulGem — and capturing
+/// or spending a soul swaps one for the other rather than modifying the gem. So a
+/// slot made from an empty gem stays an empty gem even once the player has filled
+/// ones, and a slot made from a filled gem clears when the last of them is spent.
 ///
-/// In vanilla, "Grand Soul Gem" (empty) and "Grand Soul Gem" (filled) are two
-/// separate forms — same name in the UI, different FormIDs, linked by
-/// TESSoulGem::linkedSoulGem. Capturing a soul does not modify the gem; it swaps
-/// the empty form for the filled one. Spending it swaps back.
-///
-/// This slot stores whichever form was on the cursor when it was created, so:
-///   - Add an EMPTY gem to the wheel, then go and fill your gems. The slot still
-///     points at the empty form, so activating it says "holds no soul" while the
-///     player is carrying a bag of filled ones.
-///   - Add a FILLED gem instead and use it. The gem becomes the empty form, the
-///     filled count drops to zero, IsAvailable goes false and the wheel drops the
-///     item — the slot goes blank after a single use.
-///
-/// The fix is for the slot to treat a gem and its linked counterpart as the same
-/// thing: follow linkedSoulGem in both directions when resolving availability,
-/// count and soul, rather than matching one FormID. Left as a TODO because it
-/// changes what "the item in this slot" means and wants its own testing pass.
+/// That is the same contract every other wheel item has: the slot is the form you
+/// put in it, and it clears when you run out, exactly as a potion does. Following
+/// linkedSoulGem to treat the pair as interchangeable was considered and rejected
+/// — it would have Wheeler substitute a form the player did not choose, quietly
+/// spending filled gems from a slot set up to hold empty ones.
 class WheelItemSoulGem : public WheelItem
 {
 public:
