@@ -216,6 +216,8 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
    // all. How much charge a soul is worth is the game's bookkeeping, not
    // Wheeler's, so a spent gem restores the weapon to full.
    //
+   // This is a design decision, not a gap: wheeler is a UI/UX tool, not an optimization tool. 
+   //
    // soulHolder pins the stack the soul came from, and stays null for vanilla
    // filled gems, whose soul is on the form and whose copies are interchangeable.
    RE::ExtraDataList* soulHolder = nullptr;
