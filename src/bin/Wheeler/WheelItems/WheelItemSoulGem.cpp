@@ -302,17 +302,17 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
    }
 
    if (isReusableSoulGem(this->_soulGem)) {
-      // A reusable gem survives but is emptied, as in vanilla. With no stack to
-      // clear there is nothing to spend, and granting the charge anyway would make
-      // the refill free — so do nothing at all.
-      if (!soulHolder) {
-      return;
-      }
-      auto* xSoul = soulHolder->GetByType<RE::ExtraSoul>();
-      if (!xSoul) {
-      return;
-      }
-      xSoul->soul = RE::SOUL_LEVEL::kNone;
+      // TODO: a reusable gem is not spent at all, so recharging with one is free.
+      //
+      // It used to be emptied here by writing ExtraSoul::soul = kNone on its stack,
+      // which is what vanilla does. That reproducibly crashed: recharge with the
+      // Black Star, and the next frame Wheeler::Update died walking the inventory's
+      // extra-data chain in GetInventory(). Editing extra data the engine owns is
+      // evidently not safe to do this way, and the crash matters more than the
+      // exploit. Emptying one properly likely means going through the game's own
+      // path -- swapping the stack for the linked empty gem -- rather than editing
+      // the soul in place, which wants its own investigation.
+      (void)soulHolder;
    } else {
       // Pass the holder so the stack that supplied the soul is the one spent.
       // Removing by form alone can delete an empty copy and leave the full one,
