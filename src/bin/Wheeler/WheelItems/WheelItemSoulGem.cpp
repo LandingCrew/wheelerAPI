@@ -28,6 +28,26 @@ namespace
       }
    }
 
+   // Reusable soul gems, which survive being spent on a recharge instead of being
+   // used up. Skyrim.esm is always at load order 00, so these full form IDs are
+   // stable. Nothing in the form data distinguishes a reusable gem from an
+   // ordinary one, so the only way to know is to name them.
+   //
+   // Add to this list to cover reusable gems from other plugins; a form ID from a
+   // non-master plugin has to be resolved through TESDataHandler::LookupFormID
+   // rather than hardcoded, since its load order index is not fixed.
+   constexpr RE::FormID AZURAS_STAR = 0x00063B27;
+   constexpr RE::FormID THE_BLACK_STAR = 0x00063B29;
+
+   bool isReusableSoulGem(const RE::TESSoulGem* a_soulGem)
+   {
+      if (!a_soulGem) {
+      return false;
+      }
+      const RE::FormID formID = a_soulGem->GetFormID();
+      return formID == AZURAS_STAR || formID == THE_BLACK_STAR;
+   }
+
    const char* soulLevelName(RE::SOUL_LEVEL a_soul)
    {
       switch (a_soul) {
@@ -249,10 +269,12 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
    // Parenthesised to keep the Windows min macro from eating the call.
    xCharge->charge = (std::min)(xCharge->charge + soulCharge, maxCharge);
 
-   // Recharging consumes the gem, as it does in vanilla. Reusable gems such as
-   // Azura's Star are driven by their own quest scripts and are not special-cased
-   // here — they will be consumed like any other gem.
-   pc->RemoveItem(this->_soulGem, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
+   // Recharging uses the gem up, as it does in vanilla — except for the reusable
+   // ones, which are kept. Note that a reusable gem is left holding its soul, so
+   // it can be spent again immediately rather than needing to be refilled first.
+   if (!isReusableSoulGem(this->_soulGem)) {
+      pc->RemoveItem(this->_soulGem, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
+   }
 
    Utils::NotificationMessage(Texts::GetText(Texts::TextType::SoulGemRecharged));
 }
