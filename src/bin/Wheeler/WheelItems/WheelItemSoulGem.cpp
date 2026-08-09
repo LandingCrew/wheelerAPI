@@ -216,6 +216,8 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
    // all. How much charge a soul is worth is the game's bookkeeping, not
    // Wheeler's, so a spent gem restores the weapon to full.
    //
+   // This is a design decision, not a gap: wheeler is a UI/UX tool, not an optimization tool. 
+   //
    // soulHolder pins the stack the soul came from, and stays null for vanilla
    // filled gems, whose soul is on the form and whose copies are interchangeable.
    RE::ExtraDataList* soulHolder = nullptr;
@@ -272,14 +274,27 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
    }
 
    if (isReusableSoulGem(this->_soulGem)) {
-      // TODO: a reusable gem is not spent at all, so recharging with one is free.
+      // A reusable gem survives but is emptied, as in vanilla, so it has to be
+      // refilled before it works again. Without this the artifacts recharge for
+      // free, which is the whole reason they are worth carrying.
       //
-      // It used to be emptied here by writing ExtraSoul::soul = kNone on its stack,
-      // which is what vanilla does. That was removed while bisecting the recharge
-      // crash and is not what caused it -- the crash reproduced with ordinary gems,
-      // which never reach this branch. Worth restoring once the fix below is
-      // confirmed stable, since without it the artifacts give unlimited charge.
-      (void)soulHolder;
+      // The soul is cleared in place rather than removed. ExtraDataList's removal
+      // APIs are both unsuitable: RemoveByType dereferences null inside
+      // CommonLibSSE-NG once the list drains empty -- reachable here, since a gem
+      // filled in place can hold nothing but an ExtraSoul -- and Remove() unlinks
+      // the node without freeing it. Assigning kNone is one store, and
+      // ExtraDataList::GetSoulLevel() reads straight off this field, so the engine
+      // sees an empty gem.
+      //
+      // soulHolder is the stack getAvailableSoul() read the soul from, and the gem
+      // reaches this branch only when its soul lives in ExtraSoul, so there is
+      // always one. It is used here exactly as the RemoveItem below uses it, with
+      // the same lifetime.
+      if (soulHolder) {
+      if (auto* xSoul = soulHolder->GetByType<RE::ExtraSoul>()) {
+        xSoul->soul = RE::SOUL_LEVEL::kNone;
+      }
+      }
    } else {
       // Pass the holder so the stack that supplied the soul is the one spent.
       // Removing by form alone can delete an empty copy and leave the full one,
