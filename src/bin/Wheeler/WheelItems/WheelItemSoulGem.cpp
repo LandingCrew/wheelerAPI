@@ -320,20 +320,14 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
       pc->RemoveItem(this->_soulGem, 1, RE::ITEM_REMOVE_REASON::kRemove, soulHolder, nullptr);
    }
 
-   // Keep the item's own charge data in step when it exists. The actor value is
-   // what the game reads while the weapon is equipped, but ExtraCharge is what
-   // persists on the stack, and leaving a stale one behind risks the recharge
-   // being undone on unequip or reload. Never created here — the game creates it
-   // lazily, and inventing one would be asserting state we do not own. Re-resolved
-   // rather than cached, for the same reason as the soul stack above.
-   RE::TESForm* chargedWeapon = pc->GetEquippedObject(chargeLeftHand);
-   auto* chargedBound = chargedWeapon ? chargedWeapon->As<RE::TESBoundObject>() : nullptr;
-   if (RE::ExtraDataList* weaponList = wornExtraData(pc, chargedBound, chargeLeftHand)) {
-      if (auto* xCharge = weaponList->GetByType<RE::ExtraCharge>()) {
-      xCharge->charge = maxCharge;
-      }
-   }
-
+   // Deliberately NOT writing the weapon's ExtraCharge to match. Doing so was
+   // added to stop a recharge being undone on unequip or reload, and it is the one
+   // write this file gained after the last build confirmed working in game; the
+   // build that followed crashed reproducibly on recharge, in the next frame's
+   // GetInventory() as it walked the inventory's extra-data chain. Writing through
+   // an ExtraDataList we resolved ourselves is the only plausible source of that,
+   // and the persistence problem it solved was never actually observed. The actor
+   // value below is what the game reads, and it is enough on its own.
    avOwner->ModActorValue(chargeAV, maxCharge - current);
 
    DEBUG("WheelerAPI: Recharged {} hand: {} -> {}",
