@@ -50,10 +50,9 @@ Soul gems are the one exception, because the inventory has no "use" for them at
 all. Activating a soul gem in the wheel spends it on the enchanted weapon you
 have equipped, checking your right hand first and then your left, and picking
 whichever one actually needs the charge. The gem is consumed, as it is when you
-recharge from the inventory. If you have no enchanted weapon equipped, the
-weapon is already full, or the gem holds no soul, you get a message and the gem
-is left alone. The slot shows the gem's capacity and the soul it currently
-holds.
+recharge from the inventory — except for Azura's Star and the Black Star, which
+are kept. If you have no enchanted weapon equipped, the weapon is already full,
+or the gem holds no soul, you get a message and the gem is left alone.
 
 ## Wheel Editing
 

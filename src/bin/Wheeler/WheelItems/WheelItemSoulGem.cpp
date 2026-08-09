@@ -6,28 +6,6 @@
 
 namespace
 {
-   // Charge restored per soul, matching vanilla's soul sizes:
-   // petty 250, lesser 500, common 1000, greater 2000, grand 3000. These are not
-   // exposed as game settings, so they are reproduced here — tune them if a mod
-   // in your load order rebalances soul sizes.
-   float soulChargeValue(RE::SOUL_LEVEL a_soul)
-   {
-      switch (a_soul) {
-      case RE::SOUL_LEVEL::kPetty:
-      return 250.0f;
-      case RE::SOUL_LEVEL::kLesser:
-      return 500.0f;
-      case RE::SOUL_LEVEL::kCommon:
-      return 1000.0f;
-      case RE::SOUL_LEVEL::kGreater:
-      return 2000.0f;
-      case RE::SOUL_LEVEL::kGrand:
-      return 3000.0f;
-      default:
-      return 0.0f;
-      }
-   }
-
    // Reusable soul gems, which survive being spent on a recharge instead of being
    // used up. Skyrim.esm is always at load order 00, so these full form IDs are
    // stable. Nothing in the form data distinguishes a reusable gem from an
@@ -46,24 +24,6 @@ namespace
       }
       const RE::FormID formID = a_soulGem->GetFormID();
       return formID == AZURAS_STAR || formID == THE_BLACK_STAR;
-   }
-
-   const char* soulLevelName(RE::SOUL_LEVEL a_soul)
-   {
-      switch (a_soul) {
-      case RE::SOUL_LEVEL::kPetty:
-      return "Petty";
-      case RE::SOUL_LEVEL::kLesser:
-      return "Lesser";
-      case RE::SOUL_LEVEL::kCommon:
-      return "Common";
-      case RE::SOUL_LEVEL::kGreater:
-      return "Greater";
-      case RE::SOUL_LEVEL::kGrand:
-      return "Grand";
-      default:
-      return "";
-      }
    }
 
    // Locate the extra data holding the weapon's enchantment charge, along with the
@@ -123,15 +83,12 @@ WheelItemSoulGem::WheelItemSoulGem(RE::TESSoulGem* a_soulGem)
    this->_soulGem = a_soulGem;
    this->_texture = Texture::GetIconImage(Texture::icon_image_type::icon_default, a_soulGem);
 
-   if (a_soulGem) {
-      const char* capacity = soulLevelName(a_soulGem->GetMaximumCapacity());
-      const RE::SOUL_LEVEL contained = a_soulGem->GetContainedSoul();
-      if (contained != RE::SOUL_LEVEL::kNone) {
-      this->_description = fmt::format("{} / {}", soulLevelName(contained), capacity);
-      } else {
-      this->_description = fmt::format("{} ({})", capacity, Texts::GetText(Texts::TextType::SoulGemEmpty));
-      }
-   }
+   // Deliberately no capacity/contained-soul description. Tracking what a gem
+   // holds is not Wheeler's job, and it cannot be done honestly from the form
+   // anyway: reusable gems such as the Black Star are a single form filled in
+   // place through ExtraSoul, so the form always reports an empty soul and the
+   // label read "Grand (Empty)" for a gem that was full. The name and count the
+   // slot already draws are what Wheeler can actually vouch for.
 }
 
 void WheelItemSoulGem::DrawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs)
@@ -227,8 +184,11 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
       return;
    }
 
-   const float soulCharge = soulChargeValue(this->getAvailableSoul());
-   if (soulCharge <= 0.0f) {
+   // The only thing worth asking is whether there is a soul in here at all. How
+   // much charge a given soul is worth is the game's bookkeeping, not Wheeler's,
+   // and the conversion is not exposed anywhere we could read it honestly — so a
+   // spent gem restores the weapon to full rather than to a number we invented.
+   if (this->getAvailableSoul() == RE::SOUL_LEVEL::kNone) {
       Utils::NotificationMessage(Texts::GetText(Texts::TextType::SoulGemEmptyWarning));
       return;
    }
@@ -266,8 +226,7 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
       return;
    }
 
-   // Parenthesised to keep the Windows min macro from eating the call.
-   xCharge->charge = (std::min)(xCharge->charge + soulCharge, maxCharge);
+   xCharge->charge = maxCharge;
 
    // Recharging uses the gem up, as it does in vanilla — except for the reusable
    // ones, which are kept. Note that a reusable gem is left holding its soul, so

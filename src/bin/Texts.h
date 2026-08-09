@@ -6,7 +6,6 @@ public:
    {
       AlchemyDynamicIDConsumptionWarning,
       NoWheelPresent,
-      SoulGemEmpty,
       SoulGemEmptyWarning,
       SoulGemNoEnchantedWeapon,
       SoulGemWeaponFullyCharged,
@@ -37,7 +36,6 @@ private:
       // unset; left as-is so their on-screen text does not change silently.
       MAP_ENTRY(AlchemyDynamicIDConsumptionWarning, "AlchemyDynamicIDConsumptionWarning"),
       MAP_ENTRY(NoWheelPresent, "NoWheelPresent"),
-      MAP_ENTRY(SoulGemEmpty, "Empty"),
       MAP_ENTRY(SoulGemEmptyWarning, "This soul gem holds no soul."),
       MAP_ENTRY(SoulGemNoEnchantedWeapon, "No enchanted weapon equipped."),
       MAP_ENTRY(SoulGemWeaponFullyCharged, "Your weapon is already fully charged."),
