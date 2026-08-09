@@ -26,16 +26,20 @@ namespace
       return formID == AZURAS_STAR || formID == THE_BLACK_STAR;
    }
 
-   // The extra data of the item worn in one hand. Actor::GetEquippedEntryData()
-   // returns the process's cached entry, whose extra data does not reliably carry
-   // the item's own ExtraCharge, so this reads the inventory's worn stack instead.
-   // Matching on the hand rather than on the form alone matters when the player
-   // dual-wields two copies of the same weapon.
-   RE::ExtraDataList* wornExtraData(RE::PlayerCharacter* a_pc, RE::TESBoundObject* a_bound, bool a_leftHand)
+   // Capacity of a player-applied enchantment, which lives on the worn stack's
+   // ExtraEnchantment rather than on the base form.
+   //
+   // This walks the player's inventory changes, so it is called ONLY when the form
+   // declares no capacity of its own. Calling it unconditionally -- as a revision
+   // of this file briefly did -- made every activation walk that list, and
+   // recharging then crashed reproducibly on the following frame, in
+   // Wheeler::Update where GetInventory() copies the same list. Keep the inventory
+   // untouched on the common path.
+   float wornEnchantmentCapacity(RE::PlayerCharacter* a_pc, RE::TESBoundObject* a_bound)
    {
       RE::InventoryChanges* changes = a_pc ? a_pc->GetInventoryChanges() : nullptr;
       if (!a_bound || !changes || !changes->entryList) {
-      return nullptr;
+      return 0.0f;
       }
 
       for (RE::InventoryEntryData* entry : *changes->entryList) {
@@ -43,38 +47,33 @@ namespace
         continue;
       }
       for (RE::ExtraDataList* xList : *entry->extraLists) {
-        if (!xList) {
+        if (!xList || !(xList->HasType<RE::ExtraWorn>() || xList->HasType<RE::ExtraWornLeft>())) {
            continue;
         }
-        if (a_leftHand ? xList->HasType<RE::ExtraWornLeft>() : xList->HasType<RE::ExtraWorn>()) {
-           return xList;
+        auto* xEnch = xList->GetByType<RE::ExtraEnchantment>();
+        if (xEnch && xEnch->enchantment && xEnch->charge != 0) {
+           return static_cast<float>(xEnch->charge);
         }
       }
       }
-      return nullptr;
+      return 0.0f;
    }
 
    // Charge capacity of the enchanted weapon held in one hand, or 0 if that hand
-   // holds nothing rechargeable. r_wornList receives the worn stack's extra data
-   // when there is one.
+   // holds nothing rechargeable.
    //
-   // Capacity lives in one of two places. A base-enchanted weapon, and a staff,
-   // declare it on the form as amountofEnchantment. A weapon the player enchanted
-   // themselves declares nothing on the form at all -- formEnchanting is null and
-   // amountofEnchantment is 0 -- and carries both on the worn stack's
-   // ExtraEnchantment, so the form must not be used to rule the weapon out.
-   float equippedWeaponCapacity(RE::PlayerCharacter* a_pc, RE::TESForm* a_equipped, bool a_leftHand,
-      RE::ExtraDataList*& r_wornList)
+   // A base-enchanted weapon, and a staff, declare capacity on the form. A weapon
+   // the player enchanted themselves declares nothing there at all -- formEnchanting
+   // is null and amountofEnchantment is 0 -- and carries it on the worn stack
+   // instead, so the form must not be used to rule the weapon out. Only that case
+   // reaches the inventory.
+   float equippedWeaponCapacity(RE::PlayerCharacter* a_pc, RE::TESForm* a_equipped)
    {
-      r_wornList = nullptr;
-
       auto* weapon = a_equipped ? a_equipped->As<RE::TESObjectWEAP>() : nullptr;
       auto* enchantable = weapon ? weapon->As<RE::TESEnchantableForm>() : nullptr;
       if (!enchantable) {
       return 0.0f;
       }
-
-      r_wornList = wornExtraData(a_pc, weapon, a_leftHand);
 
       const bool formDeclaresCharge =
       enchantable->formEnchanting || weapon->GetWeaponType() == RE::WEAPON_TYPE::kStaff;
@@ -82,13 +81,7 @@ namespace
       return static_cast<float>(enchantable->amountofEnchantment);
       }
 
-      if (r_wornList) {
-      auto* xEnch = r_wornList->GetByType<RE::ExtraEnchantment>();
-      if (xEnch && xEnch->enchantment && xEnch->charge != 0) {
-        return static_cast<float>(xEnch->charge);
-      }
-      }
-      return 0.0f;
+      return wornEnchantmentCapacity(a_pc, weapon);
    }
 }
 
@@ -214,27 +207,20 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
       return;
    }
 
-   // IMPORTANT: no ExtraDataList* obtained here may be held across a call back
-   // into the game. ModActorValue below can run perk entry points and HUD updates,
-   // and anything there that touches the player's inventory frees or relocates
-   // extra data. Caching a stack pointer across that and handing the stale one to
-   // RemoveItem corrupts the entry list, which then crashes the next frame in
-   // Wheeler::Update, where GetInventory() walks that list to copy it. Every
-   // lookup below is therefore re-resolved at its point of use.
+   // Touch the player's inventory as little as possible. This runs from the input
+   // path while Wheeler::Update is copying the whole inventory every frame in
+   // GetInventory(), and a revision that walked the inventory changes list on every
+   // activation crashed reproducibly in that copy on the following frame.
    //
    // The only thing worth asking of the gem is whether there is a soul in it at
    // all. How much charge a soul is worth is the game's bookkeeping, not
    // Wheeler's, so a spent gem restores the weapon to full.
-   if (this->getAvailableSoul() == RE::SOUL_LEVEL::kNone) {
+   //
+   // soulHolder pins the stack the soul came from, and stays null for vanilla
+   // filled gems, whose soul is on the form and whose copies are interchangeable.
+   RE::ExtraDataList* soulHolder = nullptr;
+   if (this->getAvailableSoul(&soulHolder) == RE::SOUL_LEVEL::kNone) {
       Utils::NotificationMessage(Texts::GetText(Texts::TextType::SoulGemEmptyWarning));
-      return;
-   }
-
-   // The wheel slot outlives the inventory: the item can be gone by the time this
-   // runs, and for a gem whose soul sits on the base form nothing above would have
-   // noticed. Spending what the player does not have would recharge for free.
-   RE::InventoryChanges* changes = pc->GetInventoryChanges();
-   if (!changes || changes->GetItemCount(this->_soulGem) <= 0) {
       return;
    }
 
@@ -253,15 +239,12 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
    // charge. foundEnchanted records that there was something rechargeable at all,
    // so "no enchanted weapon" stays distinguishable from "nothing needed it".
    bool foundEnchanted = false;
-   bool chargeLeftHand = false;
    RE::ActorValue chargeAV = RE::ActorValue::kNone;
    float maxCharge = 0.0f;
    float current = 0.0f;
    for (const auto& hand : { std::pair{ false, RE::ActorValue::kRightItemCharge },
            std::pair{ true, RE::ActorValue::kLeftItemCharge } }) {
-      RE::ExtraDataList* candidateList = nullptr;
-      const float capacity =
-      equippedWeaponCapacity(pc, pc->GetEquippedObject(hand.first), hand.first, candidateList);
+      const float capacity = equippedWeaponCapacity(pc, pc->GetEquippedObject(hand.first));
       if (capacity <= 0.0f) {
       continue;
       }
@@ -269,7 +252,6 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
       const float charge = avOwner->GetActorValue(hand.second);
       if (charge < capacity) {
       chargeAV = hand.second;
-      chargeLeftHand = hand.first;
       maxCharge = capacity;
       current = charge;
       break;
@@ -289,29 +271,14 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
       return;
    }
 
-   // Spend the gem BEFORE granting the charge. ModActorValue is the call that can
-   // invalidate extra data, so everything that needs a live ExtraDataList has to
-   // be finished first. If the spend fails there is nothing to undo, whereas
-   // granting first and failing to spend would be a free recharge.
-   //
-   // Re-resolve the soul's stack here rather than reusing anything looked up
-   // earlier: this is the point of use, and the pointer is only known good now.
-   RE::ExtraDataList* soulHolder = nullptr;
-   if (this->getAvailableSoul(&soulHolder) == RE::SOUL_LEVEL::kNone) {
-      return;
-   }
-
    if (isReusableSoulGem(this->_soulGem)) {
       // TODO: a reusable gem is not spent at all, so recharging with one is free.
       //
       // It used to be emptied here by writing ExtraSoul::soul = kNone on its stack,
-      // which is what vanilla does. That reproducibly crashed: recharge with the
-      // Black Star, and the next frame Wheeler::Update died walking the inventory's
-      // extra-data chain in GetInventory(). Editing extra data the engine owns is
-      // evidently not safe to do this way, and the crash matters more than the
-      // exploit. Emptying one properly likely means going through the game's own
-      // path -- swapping the stack for the linked empty gem -- rather than editing
-      // the soul in place, which wants its own investigation.
+      // which is what vanilla does. That was removed while bisecting the recharge
+      // crash and is not what caused it -- the crash reproduced with ordinary gems,
+      // which never reach this branch. Worth restoring once the fix below is
+      // confirmed stable, since without it the artifacts give unlimited charge.
       (void)soulHolder;
    } else {
       // Pass the holder so the stack that supplied the soul is the one spent.
@@ -320,18 +287,15 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
       pc->RemoveItem(this->_soulGem, 1, RE::ITEM_REMOVE_REASON::kRemove, soulHolder, nullptr);
    }
 
-   // Deliberately NOT writing the weapon's ExtraCharge to match. Doing so was
-   // added to stop a recharge being undone on unequip or reload, and it is the one
-   // write this file gained after the last build confirmed working in game; the
-   // build that followed crashed reproducibly on recharge, in the next frame's
-   // GetInventory() as it walked the inventory's extra-data chain. Writing through
-   // an ExtraDataList we resolved ourselves is the only plausible source of that,
-   // and the persistence problem it solved was never actually observed. The actor
-   // value below is what the game reads, and it is enough on its own.
+   // Deliberately NOT writing the weapon's ExtraCharge to match. That was added to
+   // stop a recharge being undone on unequip or reload -- a problem never actually
+   // observed -- and it meant reaching into extra data through a list resolved by
+   // walking the inventory, which is the behaviour this crash was traced to. The
+   // actor value is what the game reads, and it is enough on its own.
    avOwner->ModActorValue(chargeAV, maxCharge - current);
 
    DEBUG("WheelerAPI: Recharged {} hand: {} -> {}",
-      chargeLeftHand ? "left" : "right", current, maxCharge);
+      chargeAV == RE::ActorValue::kRightItemCharge ? "right" : "left", current, maxCharge);
 
    Utils::NotificationMessage(Texts::GetText(Texts::TextType::SoulGemRecharged));
 }
