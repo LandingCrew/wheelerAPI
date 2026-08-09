@@ -12,6 +12,7 @@
 #include "WheelItemAlchemy.h"
 #include "WheelItemScroll.h"
 #include "WheelItemMisc.h"
+#include "WheelItemSoulGem.h"
 
 std::shared_ptr<WheelItem> WheelItemFactory::MakeWheelItemFromMenuHovered()
 {
@@ -136,6 +137,18 @@ std::shared_ptr<WheelItem> WheelItemFactory::MakeWheelItemFromMenuHovered()
         return wheelItemMisc;
       }
       break;
+      // Soul gems derive from TESObjectMISC but report their own form type, so
+      // they need their own case — the Misc one above never sees them.
+      case RE::FormType::SoulGem:
+      {
+        RE::TESSoulGem* soulGem = boundObj->As<RE::TESSoulGem>();
+        if (!soulGem) {
+           return nullptr;
+        }
+        std::shared_ptr<WheelItemSoulGem> wheelItemSoulGem = std::make_shared<WheelItemSoulGem>(soulGem);
+        return wheelItemSoulGem;
+      }
+      break;
       }
       } else if (ui->IsMenuOpen(RE::MagicMenu::MENU_NAME)) {
       auto* magMenu = static_cast<RE::MagicMenu*>(ui->GetMenu(RE::MagicMenu::MENU_NAME).get());
@@ -249,6 +262,14 @@ std::shared_ptr<WheelItem> WheelItemFactory::MakeWheelItemFromJsonObject(nlohman
       }
       std::shared_ptr<WheelItemMisc> wheelItemMisc = std::make_shared<WheelItemMisc>(miscObj);
       return wheelItemMisc;
+      } else if (type == WheelItemSoulGem::ITEM_TYPE_STR) {
+      RE::TESForm* form = RE::TESForm::LookupByID(formID);
+      RE::TESSoulGem* soulGem = form ? form->As<RE::TESSoulGem>() : nullptr;
+      if (!soulGem) {
+        return nullptr;
+      }
+      std::shared_ptr<WheelItemSoulGem> wheelItemSoulGem = std::make_shared<WheelItemSoulGem>(soulGem);
+      return wheelItemSoulGem;
       }
    }
    catch (std::exception exception) {
@@ -338,6 +359,14 @@ std::shared_ptr<WheelItem> WheelItemFactory::MakeWheelItemFromFormID(RE::FormID 
         return nullptr;
       }
       return std::make_shared<WheelItemMisc>(miscObj);
+      }
+      case RE::FormType::SoulGem:
+      {
+      RE::TESSoulGem* soulGem = form->As<RE::TESSoulGem>();
+      if (!soulGem) {
+        return nullptr;
+      }
+      return std::make_shared<WheelItemSoulGem>(soulGem);
       }
       default:
       return nullptr;
