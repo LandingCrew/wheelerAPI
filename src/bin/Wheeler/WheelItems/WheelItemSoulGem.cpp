@@ -26,51 +26,50 @@ namespace
       return formID == AZURAS_STAR || formID == THE_BLACK_STAR;
    }
 
-   // Locate the extra data holding the weapon's enchantment charge, along with the
-   // capacity that charge is measured against. Player-enchanted weapons carry both
-   // on ExtraEnchantment; weapons enchanted in the base form carry the capacity on
-   // the form and only the current charge in extra data.
+   // Find the worn stack of a_object in the player's inventory and report the
+   // charge capacity of that particular item, along with the extra data it is
+   // worn on.
    //
-   // r_maxCharge is left at 0 when the entry is not a rechargeable enchanted item.
-   // r_charge is left null when the item has never been discharged — no ExtraCharge
-   // exists until the game writes one, so a missing entry means "full".
-   void findEnchantmentCharge(RE::InventoryEntryData* a_entry, float& r_maxCharge, RE::ExtraCharge*& r_charge)
+   // Actor::GetEquippedEntryData() looks like the obvious source and is not: it
+   // returns the process's cached entry (middleHigh->rightHand / leftHand), whose
+   // extra data does not reliably carry the item's ExtraCharge. Reading that made
+   // a fully drained weapon look untouched. The inventory's worn stack is real.
+   //
+   // r_maxCharge is left at 0 when nothing rechargeable was found.
+   void findWornEnchantedItem(RE::PlayerCharacter* a_pc, RE::TESForm* a_object,
+      RE::ExtraDataList*& r_wornList, float& r_maxCharge)
    {
+      r_wornList = nullptr;
       r_maxCharge = 0.0f;
-      r_charge = nullptr;
-      if (!a_entry) {
+
+      auto* bound = a_object ? a_object->As<RE::TESBoundObject>() : nullptr;
+      RE::InventoryChanges* changes = a_pc ? a_pc->GetInventoryChanges() : nullptr;
+      if (!bound || !changes || !changes->entryList) {
       return;
       }
 
-      if (a_entry->extraLists) {
-      for (RE::ExtraDataList* xList : *a_entry->extraLists) {
-        if (!xList) {
+      auto* enchantable = bound->As<RE::TESEnchantableForm>();
+      const float formCharge = (enchantable && enchantable->formEnchanting)
+                                  ? static_cast<float>(enchantable->amountofEnchantment)
+                                  : 0.0f;
+
+      for (RE::InventoryEntryData* entry : *changes->entryList) {
+      if (!entry || entry->object != bound || !entry->extraLists) {
+        continue;
+      }
+      for (RE::ExtraDataList* xList : *entry->extraLists) {
+        if (!xList || !(xList->HasType<RE::ExtraWorn>() || xList->HasType<RE::ExtraWornLeft>())) {
            continue;
         }
+        // A player-applied enchantment carries its own capacity and overrides
+        // whatever the base form declares.
         auto* xEnch = xList->GetByType<RE::ExtraEnchantment>();
-        if (xEnch && xEnch->enchantment && xEnch->charge != 0) {
-           r_maxCharge = static_cast<float>(xEnch->charge);
-           r_charge = xList->GetByType<RE::ExtraCharge>();
-           return;
-        }
-      }
-      }
-
-      // Read the member directly: GetObject() collides with the Windows macro.
-      RE::TESBoundObject* obj = a_entry->object;
-      auto* enchantable = obj ? obj->As<RE::TESEnchantableForm>() : nullptr;
-      if (!enchantable || !enchantable->formEnchanting || enchantable->amountofEnchantment == 0) {
-      return;
-      }
-      r_maxCharge = static_cast<float>(enchantable->amountofEnchantment);
-
-      if (a_entry->extraLists) {
-      for (RE::ExtraDataList* xList : *a_entry->extraLists) {
-        if (!xList) {
-           continue;
-        }
-        if (auto* xCharge = xList->GetByType<RE::ExtraCharge>()) {
-           r_charge = xCharge;
+        const float charge = (xEnch && xEnch->enchantment && xEnch->charge != 0)
+                                ? static_cast<float>(xEnch->charge)
+                                : formCharge;
+        if (charge > 0.0f) {
+           r_wornList = xList;
+           r_maxCharge = charge;
            return;
         }
       }
@@ -203,37 +202,33 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
       return;
    }
 
-   // Check both hands and take the first one that actually needs charge, right
-   // hand first. Picking the first *enchanted* weapon instead would report "already
-   // charged" for a full main hand while a drained off-hand sat there rechargeable.
-   //
-   // A weapon that has never been discharged has no ExtraCharge at all, so a
-   // missing one means it is already at capacity.
-   bool foundEnchanted = false;
+   // Right hand first, then left.
+   RE::ExtraDataList* wornList = nullptr;
    float maxCharge = 0.0f;
-   RE::ExtraCharge* xCharge = nullptr;
    for (const bool leftHand : { false, true }) {
-      float candidateMax = 0.0f;
-      RE::ExtraCharge* candidateCharge = nullptr;
-      findEnchantmentCharge(pc->GetEquippedEntryData(leftHand), candidateMax, candidateCharge);
-      if (candidateMax <= 0.0f) {
-      continue;
-      }
-      foundEnchanted = true;
-      if (candidateCharge && candidateCharge->charge < candidateMax) {
-      maxCharge = candidateMax;
-      xCharge = candidateCharge;
+      findWornEnchantedItem(pc, pc->GetEquippedObject(leftHand), wornList, maxCharge);
+      if (maxCharge > 0.0f) {
       break;
       }
    }
 
-   if (!foundEnchanted) {
+   if (!wornList || maxCharge <= 0.0f) {
       Utils::NotificationMessage(Texts::GetText(Texts::TextType::SoulGemNoEnchantedWeapon));
       return;
    }
+
+   // No "already charged" check. Whether a gem is worth spending on a weapon that
+   // did not need it is the player's call to make, not Wheeler's to refuse.
+   //
+   // An item that has never been discharged carries no ExtraCharge at all, so one
+   // has to be attached before the charge can be written.
+   auto* xCharge = wornList->GetByType<RE::ExtraCharge>();
    if (!xCharge) {
-      Utils::NotificationMessage(Texts::GetText(Texts::TextType::SoulGemWeaponFullyCharged));
-      return;
+      wornList->Add(new RE::ExtraCharge());
+      xCharge = wornList->GetByType<RE::ExtraCharge>();
+   }
+   if (!xCharge) {
+      return;  // could not attach charge data — leave the gem alone
    }
 
    xCharge->charge = maxCharge;

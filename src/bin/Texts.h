@@ -8,7 +8,6 @@ public:
       NoWheelPresent,
       SoulGemEmptyWarning,
       SoulGemNoEnchantedWeapon,
-      SoulGemWeaponFullyCharged,
       SoulGemRecharged,
       Total
    };
@@ -38,7 +37,6 @@ private:
       MAP_ENTRY(NoWheelPresent, "NoWheelPresent"),
       MAP_ENTRY(SoulGemEmptyWarning, "This soul gem holds no soul."),
       MAP_ENTRY(SoulGemNoEnchantedWeapon, "No enchanted weapon equipped."),
-      MAP_ENTRY(SoulGemWeaponFullyCharged, "Your weapon is already fully charged."),
       MAP_ENTRY(SoulGemRecharged, "Weapon recharged.")
    };
 };
