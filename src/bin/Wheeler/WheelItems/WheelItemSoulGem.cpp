@@ -26,54 +26,51 @@ namespace
       return formID == AZURAS_STAR || formID == THE_BLACK_STAR;
    }
 
-   // Find the worn stack of a_object in the player's inventory and report the
-   // charge capacity of that particular item, along with the extra data it is
-   // worn on.
-   //
-   // Actor::GetEquippedEntryData() looks like the obvious source and is not: it
-   // returns the process's cached entry (middleHigh->rightHand / leftHand), whose
-   // extra data does not reliably carry the item's ExtraCharge. Reading that made
-   // a fully drained weapon look untouched. The inventory's worn stack is real.
-   //
-   // r_maxCharge is left at 0 when nothing rechargeable was found.
-   void findWornEnchantedItem(RE::PlayerCharacter* a_pc, RE::TESForm* a_object,
-      RE::ExtraDataList*& r_wornList, float& r_maxCharge)
+   // Capacity of a player-applied enchantment, which lives on the worn stack's
+   // ExtraEnchantment rather than on the base form. Only consulted when the form
+   // itself declares no capacity, which is the case for every weapon the player
+   // enchanted themselves.
+   float wornEnchantmentCapacity(RE::PlayerCharacter* a_pc, RE::TESBoundObject* a_bound)
    {
-      r_wornList = nullptr;
-      r_maxCharge = 0.0f;
-
-      auto* bound = a_object ? a_object->As<RE::TESBoundObject>() : nullptr;
       RE::InventoryChanges* changes = a_pc ? a_pc->GetInventoryChanges() : nullptr;
-      if (!bound || !changes || !changes->entryList) {
-      return;
+      if (!a_bound || !changes || !changes->entryList) {
+      return 0.0f;
       }
 
-      auto* enchantable = bound->As<RE::TESEnchantableForm>();
-      const float formCharge = (enchantable && enchantable->formEnchanting)
-                                  ? static_cast<float>(enchantable->amountofEnchantment)
-                                  : 0.0f;
-
       for (RE::InventoryEntryData* entry : *changes->entryList) {
-      if (!entry || entry->object != bound || !entry->extraLists) {
+      if (!entry || entry->object != a_bound || !entry->extraLists) {
         continue;
       }
       for (RE::ExtraDataList* xList : *entry->extraLists) {
         if (!xList || !(xList->HasType<RE::ExtraWorn>() || xList->HasType<RE::ExtraWornLeft>())) {
            continue;
         }
-        // A player-applied enchantment carries its own capacity and overrides
-        // whatever the base form declares.
         auto* xEnch = xList->GetByType<RE::ExtraEnchantment>();
-        const float charge = (xEnch && xEnch->enchantment && xEnch->charge != 0)
-                                ? static_cast<float>(xEnch->charge)
-                                : formCharge;
-        if (charge > 0.0f) {
-           r_wornList = xList;
-           r_maxCharge = charge;
-           return;
+        if (xEnch && xEnch->enchantment && xEnch->charge != 0) {
+           return static_cast<float>(xEnch->charge);
         }
       }
       }
+      return 0.0f;
+   }
+
+   // Charge capacity of the enchanted weapon held in one hand, or 0 if that hand
+   // holds nothing rechargeable. Staves carry charge without a form enchantment,
+   // so they are admitted on weapon type.
+   float equippedWeaponCapacity(RE::PlayerCharacter* a_pc, RE::TESForm* a_equipped)
+   {
+      auto* weapon = a_equipped ? a_equipped->As<RE::TESObjectWEAP>() : nullptr;
+      auto* enchantable = weapon ? weapon->As<RE::TESEnchantableForm>() : nullptr;
+      if (!enchantable) {
+      return 0.0f;
+      }
+      if (!enchantable->formEnchanting && weapon->GetWeaponType() != RE::WEAPON_TYPE::kStaff) {
+      return 0.0f;
+      }
+      if (enchantable->amountofEnchantment != 0) {
+      return static_cast<float>(enchantable->amountofEnchantment);
+      }
+      return wornEnchantmentCapacity(a_pc, weapon);
    }
 }
 
@@ -202,36 +199,50 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
       return;
    }
 
-   // Right hand first, then left.
-   RE::ExtraDataList* wornList = nullptr;
+   RE::ActorValueOwner* avOwner = pc->AsActorValueOwner();
+   if (!avOwner) {
+      return;
+   }
+
+   // Charge lives in the kRightItemCharge / kLeftItemCharge actor values. That is
+   // what the game's own HUD reads, and it is the only reliable source: the
+   // ExtraCharge in inventory extra data is created lazily and does not track the
+   // current charge of a base-enchanted weapon. Writing ExtraCharge instead spent
+   // the gem and moved nothing.
+   //
+   // Right hand first, then left, preferring a hand that actually needs charge but
+   // falling back to whatever is enchanted — declining to overcharge is the
+   // player's call, not Wheeler's.
+   RE::ActorValue chargeAV = RE::ActorValue::kNone;
    float maxCharge = 0.0f;
-   for (const bool leftHand : { false, true }) {
-      findWornEnchantedItem(pc, pc->GetEquippedObject(leftHand), wornList, maxCharge);
-      if (maxCharge > 0.0f) {
+   for (const auto& hand : { std::pair{ false, RE::ActorValue::kRightItemCharge },
+           std::pair{ true, RE::ActorValue::kLeftItemCharge } }) {
+      const float capacity = equippedWeaponCapacity(pc, pc->GetEquippedObject(hand.first));
+      if (capacity <= 0.0f) {
+      continue;
+      }
+      if (chargeAV == RE::ActorValue::kNone) {
+      chargeAV = hand.second;
+      maxCharge = capacity;
+      }
+      if (avOwner->GetActorValue(hand.second) < capacity) {
+      chargeAV = hand.second;
+      maxCharge = capacity;
       break;
       }
    }
 
-   if (!wornList || maxCharge <= 0.0f) {
+   if (chargeAV == RE::ActorValue::kNone) {
       Utils::NotificationMessage(Texts::GetText(Texts::TextType::SoulGemNoEnchantedWeapon));
       return;
    }
 
-   // No "already charged" check. Whether a gem is worth spending on a weapon that
-   // did not need it is the player's call to make, not Wheeler's to refuse.
-   //
-   // An item that has never been discharged carries no ExtraCharge at all, so one
-   // has to be attached before the charge can be written.
-   auto* xCharge = wornList->GetByType<RE::ExtraCharge>();
-   if (!xCharge) {
-      wornList->Add(new RE::ExtraCharge());
-      xCharge = wornList->GetByType<RE::ExtraCharge>();
+   const float current = avOwner->GetActorValue(chargeAV);
+   if (current < maxCharge) {
+      avOwner->ModActorValue(chargeAV, maxCharge - current);
    }
-   if (!xCharge) {
-      return;  // could not attach charge data — leave the gem alone
-   }
-
-   xCharge->charge = maxCharge;
+   DEBUG("WheelerAPI: Recharged {} hand: {} -> {}",
+      chargeAV == RE::ActorValue::kRightItemCharge ? "right" : "left", current, maxCharge);
 
    // Something has to be spent, or the recharge is free. A reusable gem survives
    // but is emptied and has to be refilled before it works again, as in vanilla;
