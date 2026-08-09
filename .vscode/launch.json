@@ -1,0 +1,28 @@
+{
+    // Attach the Visual Studio Windows debugger (cppvsdbg) to a running SkyrimSE.exe
+    // so a Debug-CRT assertion in Huginn.dll (e.g. "vector subscript out of range")
+    // breaks into VS Code with a full call stack.
+    //
+    // Requires the "C/C++" extension (ms-vscode.cpptools).
+    //
+    // Usage:
+    //   1. Launch Skyrim through Mod Organizer 2 as usual and get in-game.
+    //   2. In VS Code: Run and Debug (Ctrl+Shift+D) -> "Attach to SkyrimSE.exe (Huginn)" -> F5.
+    //   3. In the process picker, type "Skyrim" and pick SkyrimSE.exe.
+    //   4. Reproduce the crash. When "Debug Assertion Failed" appears, click **Retry** —
+    //      VS Code breaks at the faulting frame. Open the CALL STACK panel and read down
+    //      to the first Huginn frame (file:line).
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Attach to SkyrimSE.exe (Huginn)",
+            "type": "cppvsdbg",
+            "request": "attach",
+            "processId": "${command:pickProcess}",
+            // Only the build-output PDB — NOT the deployed copy in overwrite\, so a
+            // live debug session never locks the file that cmake's post-build step
+            // needs to overwrite. Symbols resolve from here (the DLL embeds this path).
+            "symbolSearchPath": "${workspaceFolder}/build/src/Debug"
+        }
+    ]
+}

@@ -214,15 +214,18 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
       return;
    }
 
-   // The only thing worth asking is whether there is a soul in here at all. How
-   // much charge a given soul is worth is the game's bookkeeping, not Wheeler's,
-   // and the conversion is not exposed anywhere we could read it honestly — so a
-   // spent gem restores the weapon to full rather than to a number we invented.
+   // IMPORTANT: no ExtraDataList* obtained here may be held across a call back
+   // into the game. ModActorValue below can run perk entry points and HUD updates,
+   // and anything there that touches the player's inventory frees or relocates
+   // extra data. Caching a stack pointer across that and handing the stale one to
+   // RemoveItem corrupts the entry list, which then crashes the next frame in
+   // Wheeler::Update, where GetInventory() walks that list to copy it. Every
+   // lookup below is therefore re-resolved at its point of use.
    //
-   // soulHolder pins the exact stack the soul came from; it stays null for vanilla
-   // filled gems, whose soul is on the form and whose copies are interchangeable.
-   RE::ExtraDataList* soulHolder = nullptr;
-   if (this->getAvailableSoul(&soulHolder) == RE::SOUL_LEVEL::kNone) {
+   // The only thing worth asking of the gem is whether there is a soul in it at
+   // all. How much charge a soul is worth is the game's bookkeeping, not
+   // Wheeler's, so a spent gem restores the weapon to full.
+   if (this->getAvailableSoul() == RE::SOUL_LEVEL::kNone) {
       Utils::NotificationMessage(Texts::GetText(Texts::TextType::SoulGemEmptyWarning));
       return;
    }
@@ -232,13 +235,6 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
    // noticed. Spending what the player does not have would recharge for free.
    RE::InventoryChanges* changes = pc->GetInventoryChanges();
    if (!changes || changes->GetItemCount(this->_soulGem) <= 0) {
-      return;
-   }
-
-   // A reusable gem is spent by clearing the soul off its stack, so without that
-   // stack there is nothing to clear and the recharge would cost nothing at all.
-   // Better to do nothing than to hand out a free refill.
-   if (isReusableSoulGem(this->_soulGem) && !soulHolder) {
       return;
    }
 
@@ -257,10 +253,10 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
    // charge. foundEnchanted records that there was something rechargeable at all,
    // so "no enchanted weapon" stays distinguishable from "nothing needed it".
    bool foundEnchanted = false;
+   bool chargeLeftHand = false;
    RE::ActorValue chargeAV = RE::ActorValue::kNone;
    float maxCharge = 0.0f;
    float current = 0.0f;
-   RE::ExtraDataList* weaponList = nullptr;
    for (const auto& hand : { std::pair{ false, RE::ActorValue::kRightItemCharge },
            std::pair{ true, RE::ActorValue::kLeftItemCharge } }) {
       RE::ExtraDataList* candidateList = nullptr;
@@ -273,9 +269,9 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
       const float charge = avOwner->GetActorValue(hand.second);
       if (charge < capacity) {
       chargeAV = hand.second;
+      chargeLeftHand = hand.first;
       maxCharge = capacity;
       current = charge;
-      weaponList = candidateList;
       break;
       }
    }
@@ -293,37 +289,55 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
       return;
    }
 
-   avOwner->ModActorValue(chargeAV, maxCharge - current);
-
-   // Keep the item's own charge data in step when it exists. The actor value is
-   // what the game reads while the weapon is equipped, but ExtraCharge is what
-   // persists on the stack, and leaving a stale one behind risks the recharge
-   // being undone on unequip or reload. Never created here — the game creates it
-   // lazily, and inventing one would be asserting state we do not own.
-   if (weaponList) {
-      if (auto* xCharge = weaponList->GetByType<RE::ExtraCharge>()) {
-      xCharge->charge = maxCharge;
-      }
+   // Spend the gem BEFORE granting the charge. ModActorValue is the call that can
+   // invalidate extra data, so everything that needs a live ExtraDataList has to
+   // be finished first. If the spend fails there is nothing to undo, whereas
+   // granting first and failing to spend would be a free recharge.
+   //
+   // Re-resolve the soul's stack here rather than reusing anything looked up
+   // earlier: this is the point of use, and the pointer is only known good now.
+   RE::ExtraDataList* soulHolder = nullptr;
+   if (this->getAvailableSoul(&soulHolder) == RE::SOUL_LEVEL::kNone) {
+      return;
    }
 
-   DEBUG("WheelerAPI: Recharged {} hand: {} -> {}",
-      chargeAV == RE::ActorValue::kRightItemCharge ? "right" : "left", current, maxCharge);
-
-   // Something has to be spent, or the recharge is free. A reusable gem survives
-   // but is emptied and has to be refilled before it works again, as in vanilla;
-   // anything else is used up.
    if (isReusableSoulGem(this->_soulGem)) {
-      if (soulHolder) {
-      if (auto* xSoul = soulHolder->GetByType<RE::ExtraSoul>()) {
-        xSoul->soul = RE::SOUL_LEVEL::kNone;
+      // A reusable gem survives but is emptied, as in vanilla. With no stack to
+      // clear there is nothing to spend, and granting the charge anyway would make
+      // the refill free — so do nothing at all.
+      if (!soulHolder) {
+      return;
       }
+      auto* xSoul = soulHolder->GetByType<RE::ExtraSoul>();
+      if (!xSoul) {
+      return;
       }
+      xSoul->soul = RE::SOUL_LEVEL::kNone;
    } else {
       // Pass the holder so the stack that supplied the soul is the one spent.
       // Removing by form alone can delete an empty copy and leave the full one,
       // which hands the player an unlimited recharge.
       pc->RemoveItem(this->_soulGem, 1, RE::ITEM_REMOVE_REASON::kRemove, soulHolder, nullptr);
    }
+
+   // Keep the item's own charge data in step when it exists. The actor value is
+   // what the game reads while the weapon is equipped, but ExtraCharge is what
+   // persists on the stack, and leaving a stale one behind risks the recharge
+   // being undone on unequip or reload. Never created here — the game creates it
+   // lazily, and inventing one would be asserting state we do not own. Re-resolved
+   // rather than cached, for the same reason as the soul stack above.
+   RE::TESForm* chargedWeapon = pc->GetEquippedObject(chargeLeftHand);
+   auto* chargedBound = chargedWeapon ? chargedWeapon->As<RE::TESBoundObject>() : nullptr;
+   if (RE::ExtraDataList* weaponList = wornExtraData(pc, chargedBound, chargeLeftHand)) {
+      if (auto* xCharge = weaponList->GetByType<RE::ExtraCharge>()) {
+      xCharge->charge = maxCharge;
+      }
+   }
+
+   avOwner->ModActorValue(chargeAV, maxCharge - current);
+
+   DEBUG("WheelerAPI: Recharged {} hand: {} -> {}",
+      chargeLeftHand ? "left" : "right", current, maxCharge);
 
    Utils::NotificationMessage(Texts::GetText(Texts::TextType::SoulGemRecharged));
 }
