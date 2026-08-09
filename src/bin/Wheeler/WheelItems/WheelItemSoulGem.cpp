@@ -136,33 +136,36 @@ void WheelItemSoulGem::SerializeIntoJsonObj(nlohmann::json& a_json)
    a_json["formID"] = this->_soulGem->GetFormID();
 }
 
-RE::SOUL_LEVEL WheelItemSoulGem::getAvailableSoul() const
+RE::SOUL_LEVEL WheelItemSoulGem::getAvailableSoul(RE::ExtraDataList** a_holder) const
 {
+   if (a_holder) {
+      *a_holder = nullptr;
+   }
    if (!this->_soulGem) {
       return RE::SOUL_LEVEL::kNone;
    }
 
    const RE::SOUL_LEVEL onForm = this->_soulGem->GetContainedSoul();
    if (onForm != RE::SOUL_LEVEL::kNone) {
+      // A filled vanilla gem is its own base form, so every copy the player holds
+      // is equally full and there is no particular stack to single out.
       return onForm;
    }
 
    RE::PlayerCharacter* pc = RE::PlayerCharacter::GetSingleton();
-   if (!pc) {
+   RE::InventoryChanges* changes = pc ? pc->GetInventoryChanges() : nullptr;
+   if (!changes || !changes->entryList) {
       return RE::SOUL_LEVEL::kNone;
    }
 
-   // No soul on the form — check whether the copy in the player's inventory was
-   // filled in place, and take the largest soul we can find on it.
-   RE::TESObjectREFR::InventoryItemMap inv = pc->GetInventory();
-   auto it = inv.find(this->_soulGem);
-   if (it == inv.end() || it->second.first <= 0 || !it->second.second) {
-      return RE::SOUL_LEVEL::kNone;
-   }
-
+   // Nothing on the form — the gem was filled in place, so the soul is on one
+   // particular stack in the inventory. Remember which, because the caller has to
+   // drain or spend that same stack and not merely something of the same form.
    RE::SOUL_LEVEL best = RE::SOUL_LEVEL::kNone;
-   const RE::InventoryEntryData* entry = it->second.second.get();
-   if (entry->extraLists) {
+   for (RE::InventoryEntryData* entry : *changes->entryList) {
+      if (!entry || entry->object != this->_soulGem || !entry->extraLists) {
+      continue;
+      }
       for (RE::ExtraDataList* xList : *entry->extraLists) {
       if (!xList) {
         continue;
@@ -170,6 +173,9 @@ RE::SOUL_LEVEL WheelItemSoulGem::getAvailableSoul() const
       if (auto* xSoul = xList->GetByType<RE::ExtraSoul>()) {
         if (xSoul->GetContainedSoul() > best) {
            best = xSoul->GetContainedSoul();
+           if (a_holder) {
+            *a_holder = xList;
+           }
         }
       }
       }
@@ -188,7 +194,11 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
    // much charge a given soul is worth is the game's bookkeeping, not Wheeler's,
    // and the conversion is not exposed anywhere we could read it honestly — so a
    // spent gem restores the weapon to full rather than to a number we invented.
-   if (this->getAvailableSoul() == RE::SOUL_LEVEL::kNone) {
+   //
+   // soulHolder pins the exact stack the soul came from; it stays null for vanilla
+   // filled gems, whose soul is on the form and whose copies are interchangeable.
+   RE::ExtraDataList* soulHolder = nullptr;
+   if (this->getAvailableSoul(&soulHolder) == RE::SOUL_LEVEL::kNone) {
       Utils::NotificationMessage(Texts::GetText(Texts::TextType::SoulGemEmptyWarning));
       return;
    }
@@ -228,11 +238,20 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
 
    xCharge->charge = maxCharge;
 
-   // Recharging uses the gem up, as it does in vanilla — except for the reusable
-   // ones, which are kept. Note that a reusable gem is left holding its soul, so
-   // it can be spent again immediately rather than needing to be refilled first.
-   if (!isReusableSoulGem(this->_soulGem)) {
-      pc->RemoveItem(this->_soulGem, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
+   // Something has to be spent, or the recharge is free. A reusable gem survives
+   // but is emptied and has to be refilled before it works again, as in vanilla;
+   // anything else is used up.
+   if (isReusableSoulGem(this->_soulGem)) {
+      if (soulHolder) {
+      if (auto* xSoul = soulHolder->GetByType<RE::ExtraSoul>()) {
+        xSoul->soul = RE::SOUL_LEVEL::kNone;
+      }
+      }
+   } else {
+      // Pass the holder so the stack that supplied the soul is the one spent.
+      // Removing by form alone can delete an empty copy and leave the full one,
+      // which hands the player an unlimited recharge.
+      pc->RemoveItem(this->_soulGem, 1, RE::ITEM_REMOVE_REASON::kRemove, soulHolder, nullptr);
    }
 
    Utils::NotificationMessage(Texts::GetText(Texts::TextType::SoulGemRecharged));

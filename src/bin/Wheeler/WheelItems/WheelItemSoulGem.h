@@ -38,6 +38,11 @@ private:
    /// base form when they capture a soul, so the level usually lives on the form
    /// itself; gems filled by other means carry it in ExtraSoul on the inventory
    /// entry instead, so fall back to that.
+   ///
+   /// a_holder receives the live ExtraDataList the soul was read from, so the
+   /// caller can act on that exact stack rather than on any copy of the form. It
+   /// is left null when the soul came from the base form, where every instance is
+   /// equally full and picking between them is meaningless.
    /// </summary>
-   RE::SOUL_LEVEL getAvailableSoul() const;
+   RE::SOUL_LEVEL getAvailableSoul(RE::ExtraDataList** a_holder = nullptr) const;
 };
