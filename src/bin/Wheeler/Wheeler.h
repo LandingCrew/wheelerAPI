@@ -223,6 +223,31 @@ private:
    static void exitEditMode();
 
    /// <summary>
+   /// Raise a client notification, or park it if the calling thread is inside a
+   /// DeferredNotifications scope. Every Wheeler path that reaches WheelerAPI's
+   /// Notify* functions goes through these instead of calling them directly.
+   /// </summary>
+   static void notifyWheelStateChanged(int32_t a_wheelIndex, bool a_isOpen);
+   static void notifyEditModeChanged(bool a_entered);
+   static void notifyItemActivated(int32_t a_wheelIndex, int32_t a_entryIndex, int32_t a_itemIndex, uint32_t a_formID, bool a_isPrimary);
+
+   /// <summary>
+   /// Withholds client notifications for as long as it is alive, dispatching them
+   /// from its destructor. _wheelDataLock is not recursive, and a callback is free
+   /// to call back into WheelerAPI — every public API entry re-locks it — so a
+   /// notification raised under the lock would hang the thread that raised it.
+   /// Declare this *before* the lock guard in the scope that takes the lock, so
+   /// that it unwinds last, i.e. after the lock has been released.
+   /// </summary>
+   struct DeferredNotifications
+   {
+      DeferredNotifications();
+      ~DeferredNotifications();
+      DeferredNotifications(const DeferredNotifications&) = delete;
+      DeferredNotifications& operator=(const DeferredNotifications&) = delete;
+   };
+
+   /// <summary>
    /// Body of Clear(). Caller must already hold _wheelDataLock exclusively.
    /// Destroys every unmanaged wheel and compacts the surviving managed wheels
    /// to the front of _wheels, preserving their relative order.
