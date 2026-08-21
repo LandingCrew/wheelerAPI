@@ -278,21 +278,6 @@ namespace WheelerAPI
    };
    ManagedWheelStyling GetManagedWheelStyling(int32_t wheelIndex);
 
-   // Internal storage struct for entry subtext (includes computed values)
-   struct EntrySubtextInfo
-   {
-      std::string text;
-      float offsetX;
-      float offsetY;
-      float fontSize;
-      uint32_t color;
-      bool hasSubtext;  // true if text is non-empty
-   };
-
-   // Get entry subtext info for rendering
-   // Used internally by WheelEntry::drawSlot()
-   EntrySubtextInfo GetEntrySubtextInfo(int32_t wheelIndex, int32_t entryIndex);
-
 }  // namespace WheelerAPI
 
 // ============================================================================

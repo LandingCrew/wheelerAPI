@@ -39,7 +39,7 @@ public:
    void ClearManagedInfo() { _managedInfo.reset(); }
 
    void Draw(ImVec2 a_wheelCenter, float a_cursorAngle, bool a_cursorCentered, RE::TESObjectREFR::InventoryItemMap& a_imap,
-      DrawArgs a_drawArgs, int32_t a_wheelIndex = -1);
+      DrawArgs a_drawArgs);
       
 
     void Clear();

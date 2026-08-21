@@ -225,7 +225,7 @@ void Wheeler::Update(float a_deltaTime)
       Drawer::draw_text(wheelCenter.x, wheelCenter.y, Texts::GetText(Texts::TextType::NoWheelPresent), C_SKYRIMWHITE, 40.F, drawArgs);
       } else {
       bool isCursorCentered = _cursorPos.x == 0 && _cursorPos.y == 0;
-      _wheels[_activeWheelIdx]->Draw(wheelCenter, cursorAngle, isCursorCentered, inv, drawArgs, static_cast<int32_t>(_activeWheelIdx));
+      _wheels[_activeWheelIdx]->Draw(wheelCenter, cursorAngle, isCursorCentered, inv, drawArgs);
       }
 
 

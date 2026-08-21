@@ -5,7 +5,6 @@
 #include "WheelItems/WheelItemMutable.h"
 #include "WheelEntry.h"
 #include "WheelItems/WheelItemShout.h"
-#include "bin/API/WheelerAPI.h"
 void WheelEntry::UpdateAnimation(RE::TESObjectREFR::InventoryItemMap& imap, float innerSpacingRad, float entryInnerAngleMin, float entryInnerAngleMax, float entryOuterAngleMin, float entryOuterAngleMax, bool hovered)
 {
    using namespace Config::Styling::Wheel;
@@ -93,14 +92,14 @@ void WheelEntry::DrawBackGround(
    
 }
 
-void WheelEntry::DrawSlotAndHighlight(ImVec2 a_wheelCenter, ImVec2 a_entryCenter, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs, int32_t a_wheelIndex, int32_t a_entryIndex)
+void WheelEntry::DrawSlotAndHighlight(ImVec2 a_wheelCenter, ImVec2 a_entryCenter, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs)
 {
    try {
 
       if (a_hovered) {
       this->drawHighlight(a_wheelCenter, a_imap, a_drawArgs);
       }
-      this->drawSlot(a_entryCenter, a_hovered, a_imap, a_drawArgs, a_wheelIndex, a_entryIndex);
+      this->drawSlot(a_entryCenter, a_hovered, a_imap, a_drawArgs);
    } catch (std::exception& e) {
       logger::error("Exception in WheelEntry::DrawSlotAndHighlight: {}", e.what());
    }
@@ -145,7 +144,7 @@ void WheelEntry::drawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::In
    }
 }
 */
-void WheelEntry::drawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs, int32_t a_wheelIndex, int32_t a_entryIndex)
+void WheelEntry::drawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs)
 {
    try {
       std::shared_lock<std::shared_mutex> lock(this->_lock);
@@ -182,16 +181,13 @@ void WheelEntry::drawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::In
       }
       }
 
-      // Draw subtext if set for this entry (API v2 feature)
+      // Draw subtext if the owning client set one (API v2 feature)
       // Renders even on empty entries so managed wheels can show labels like "(No healing)"
-      if (a_wheelIndex >= 0 && a_entryIndex >= 0) {
-      auto subtextInfo = WheelerAPI::GetEntrySubtextInfo(a_wheelIndex, a_entryIndex);
-      if (subtextInfo.hasSubtext) {
-        float subtextX = a_center.x + subtextInfo.offsetX;
-        float subtextY = a_center.y + subtextInfo.offsetY;
-        Drawer::draw_text(subtextX, subtextY, subtextInfo.text.c_str(),
-           subtextInfo.color, subtextInfo.fontSize, a_drawArgs);
-      }
+      if (_subtext && !_subtext->text.empty()) {
+      float subtextX = a_center.x + _subtext->offsetX;
+      float subtextY = a_center.y + _subtext->offsetY;
+      Drawer::draw_text(subtextX, subtextY, _subtext->text.c_str(),
+        _subtext->color, _subtext->fontSize, a_drawArgs);
       }
    } catch (const std::exception& e) {
       logger::error("Exception in WheelEntry::drawSlot: {}", e.what());
@@ -460,3 +456,14 @@ void WheelEntry::SetSelectedItem(int a_selected)
    this->_selectedItem = a_selected;
 }
 
+void WheelEntry::SetSubtext(EntrySubtext a_subtext)
+{
+   std::unique_lock<std::shared_mutex> lock(this->_lock);
+   _subtext = std::move(a_subtext);
+}
+
+void WheelEntry::ClearSubtext()
+{
+   std::unique_lock<std::shared_mutex> lock(this->_lock);
+   _subtext.reset();
+}
