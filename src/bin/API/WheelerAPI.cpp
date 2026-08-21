@@ -238,6 +238,31 @@ namespace WheelerAPI
       return index;
    }
 
+   // Settle the active wheel index after wheels have been erased. Callers pass the
+   // index already decremented once per erased slot BELOW it — erasing there shifts
+   // every later wheel down, so leaving the index alone silently moves the player
+   // onto a different wheel. a_activeWasErased means the wheel the player was on is
+   // the one that went away, in which case the index now names whichever wheel slid
+   // into its place and the hover left behind no longer belongs to it.
+   // Caller must hold the wheel-data lock exclusively.
+   static void SettleActiveWheelLocked(int a_activeIdx, bool a_activeWasErased)
+   {
+      auto& wheels = Wheeler::GetWheels();
+      if (wheels.empty()) {
+      return;
+      }
+      if (a_activeIdx >= static_cast<int>(wheels.size())) {
+      a_activeIdx = static_cast<int>(wheels.size()) - 1;
+      }
+      if (a_activeIdx < 0) {
+      a_activeIdx = 0;
+      }
+      Wheeler::SetActiveWheelIndex(a_activeIdx);
+      if (a_activeWasErased) {
+      wheels[a_activeIdx]->SetHoveredEntryIndex(-1);
+      }
+   }
+
    static Result API_DeleteManagedWheel(int32_t wheelIndex)
    {
       if (!s_initialized) {
@@ -260,14 +285,16 @@ namespace WheelerAPI
       return Result::LastWheel;
       }
 
+      int activeIdx = Wheeler::GetActiveWheelIndex();
+      const bool activeWasErased = (wheelIndex == activeIdx);
+
       wheels.erase(wheels.begin() + wheelIndex);
       s_managedWheelCount.fetch_sub(1, std::memory_order_relaxed);
 
-      // Adjust active wheel index if needed
-      int activeIdx = Wheeler::GetActiveWheelIndex();
-      if (activeIdx >= static_cast<int>(wheels.size())) {
-      Wheeler::SetActiveWheelIndex(static_cast<int>(wheels.size()) - 1);
+      if (wheelIndex < activeIdx) {
+      --activeIdx;  // the wheels above the erased slot all shifted down one
       }
+      SettleActiveWheelLocked(activeIdx, activeWasErased);
 
       DEBUG("WheelerAPI: Deleted managed wheel at index {}", wheelIndex);
       return Result::OK;
@@ -301,6 +328,10 @@ namespace WheelerAPI
       }
 
       // Never remove the last remaining wheel (Wheeler must keep >= 1).
+      // Track the active index as we go rather than afterwards: the loop can stop
+      // early on that guard, so only the slots actually erased may shift it.
+      int activeIdx = Wheeler::GetActiveWheelIndex();
+      bool activeWasErased = false;
       int32_t deleted = 0;
       for (auto it = toDelete.rbegin(); it != toDelete.rend(); ++it) {
       if (wheels.size() <= 1) {
@@ -309,12 +340,14 @@ namespace WheelerAPI
       wheels.erase(wheels.begin() + *it);
       s_managedWheelCount.fetch_sub(1, std::memory_order_relaxed);
       ++deleted;
+      if (*it < activeIdx) {
+        --activeIdx;
+      } else if (*it == activeIdx) {
+        activeWasErased = true;
+      }
       }
 
-      int activeIdx = Wheeler::GetActiveWheelIndex();
-      if (activeIdx >= static_cast<int>(wheels.size())) {
-      Wheeler::SetActiveWheelIndex(static_cast<int>(wheels.size()) - 1);
-      }
+      SettleActiveWheelLocked(activeIdx, activeWasErased);
 
       DEBUG("WheelerAPI: Deleted {} managed wheel(s) for client '{}'", deleted, clientName);
       return deleted;
