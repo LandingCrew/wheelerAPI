@@ -227,10 +227,19 @@ namespace WheelerAPI
       int32_t index;
       if (config->position < 0 || config->position >= static_cast<int32_t>(wheels.size())) {
       index = static_cast<int32_t>(wheels.size());
-      wheels.push_back(std::move(wheel));
+      wheels.push_back(std::move(wheel));  // appended past the end, nothing shifts
       } else {
       index = config->position;
       wheels.insert(wheels.begin() + index, std::move(wheel));
+
+      // Every wheel from `index` up moved one slot along, the active one with it.
+      // Leaving the index alone would leave the player pointing at whichever wheel
+      // took its place. The active wheel object is unchanged here, so its hovered
+      // entry stays valid — unlike the deletion paths, which can destroy it.
+      const int activeIdx = Wheeler::GetActiveWheelIndex();
+      if (activeIdx >= index) {
+        Wheeler::SetActiveWheelIndex(activeIdx + 1);
+      }
       }
 
       DEBUG("WheelerAPI: Created managed wheel at index {} with {} entries (client: {}, showLabel: {})",
