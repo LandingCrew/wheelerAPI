@@ -59,6 +59,14 @@ public:
    static void TryOpenWheeler();
    static void TryCloseWheeler();
 
+   /// <summary>
+   /// Ask for the wheel to close on the next update, without taking the
+   /// wheel-data lock. This is what item activation must use: it already runs
+   /// under the lock, so calling TryCloseWheeler() from there would re-enter a
+   /// mutex that is not recursive.
+   /// </summary>
+   static void RequestClose();
+
    static void OpenWheeler();
    static void CloseWheeler();
    
@@ -221,6 +229,19 @@ private:
 
    static void enterEditMode();
    static void exitEditMode();
+
+   /// <summary>
+   /// Bodies of CloseWheeler() and DeleteCurrentWheel() for callers that already
+   /// hold _wheelDataLock. The public wrappers take the lock and delegate here;
+   /// calling a wrapper from inside a locked scope would re-enter a mutex that is
+   /// not recursive.
+   /// </summary>
+   static void closeWheelerLocked();
+   static void deleteCurrentWheelLocked();
+   static void tryCloseWheelerLocked();
+
+   // Set by RequestClose(), consumed by Update() under the lock.
+   static inline bool _closeRequested = false;
 
    /// <summary>
    /// Raise a client notification, or park it if the calling thread is inside a
