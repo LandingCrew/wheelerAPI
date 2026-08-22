@@ -2,7 +2,6 @@
 #include "WheelerAPI.h"
 
 #include <atomic>
-#include <unordered_map>
 
 #include "bin/Wheeler/Wheeler.h"
 #include "bin/Wheeler/Wheel.h"
@@ -31,32 +30,6 @@ namespace WheelerAPI
       return wheel ? wheel->GetManagedInfo() : nullptr;
    }
 
-   // Internal storage for subtext info
-   struct SubtextData
-   {
-      std::string text;
-      float offsetX = 0.0f;
-      float offsetY = 20.0f;
-      float fontSize = 28.0f;
-      uint32_t color = 0xB0FFFFFF;  // 70% white (ABGR for ImGui)
-   };
-
-   // Entry subtext storage: key = (wheelIndex << 16) | entryIndex
-   static std::unordered_map<uint32_t, SubtextData> s_entrySubtexts;
-   static std::shared_mutex s_subtextLock;
-
-   // Helper to create subtext key from wheel and entry indices
-   static uint32_t MakeSubtextKey(int32_t wheelIndex, int32_t entryIndex)
-   {
-      return (static_cast<uint32_t>(wheelIndex) << 16) | (static_cast<uint32_t>(entryIndex) & 0xFFFF);
-   }
-
-   // Default values for subtext rendering
-   static constexpr float DEFAULT_SUBTEXT_OFFSET_X = 0.0f;
-   static constexpr float DEFAULT_SUBTEXT_OFFSET_Y = 20.0f;
-   static constexpr float DEFAULT_SUBTEXT_FONT_SIZE = 28.0f;
-   static constexpr uint32_t DEFAULT_SUBTEXT_COLOR = 0xB0FFFFFF;  // 70% white (ABGR)
-
    // Callbacks - protected by s_callbackLock
    static std::mutex s_callbackLock;
    static ItemActivatedCallback s_itemActivatedCallback = nullptr;
@@ -75,14 +48,15 @@ namespace WheelerAPI
       }
    }
 
-   // Called by Wheeler when item is activated
-   void NotifyItemActivated(int32_t wheelIndex, int32_t entryIndex, int32_t itemIndex, uint32_t formID, bool isPrimary)
+   // Called by Wheeler when item is activated. clientName is resolved by the caller
+   // while it still holds the wheel-data lock; looking it up here would read _wheels
+   // unlocked, since notifications are dispatched after the lock is released.
+   void NotifyItemActivated(int32_t wheelIndex, int32_t entryIndex, int32_t itemIndex, uint32_t formID, bool isPrimary,
+      const std::string& clientName)
    {
-      // Log if this is a managed wheel
-      std::string clientNameCopy = GetManagedWheelClientNameSafe(wheelIndex);
-      if (!clientNameCopy.empty()) {
+      if (!clientName.empty()) {
       INFO("WheelerAPI: Item activated on managed wheel {} (client: {}), entry={}, item={}, formID={:08X}, primary={}",
-        wheelIndex, clientNameCopy, entryIndex, itemIndex, formID, isPrimary);
+        wheelIndex, clientName, entryIndex, itemIndex, formID, isPrimary);
       }
 
       // Copy callback under lock, then invoke outside lock to avoid deadlock
@@ -185,32 +159,9 @@ namespace WheelerAPI
       return styling;
    }
 
-   // Get entry subtext info for rendering
-   EntrySubtextInfo GetEntrySubtextInfo(int32_t wheelIndex, int32_t entryIndex)
-   {
-      EntrySubtextInfo info;
-      info.hasSubtext = false;
-      info.offsetX = DEFAULT_SUBTEXT_OFFSET_X;
-      info.offsetY = DEFAULT_SUBTEXT_OFFSET_Y;
-      info.fontSize = DEFAULT_SUBTEXT_FONT_SIZE;
-      info.color = DEFAULT_SUBTEXT_COLOR;
-
-      uint32_t key = MakeSubtextKey(wheelIndex, entryIndex);
-      std::shared_lock lock(s_subtextLock);
-      auto it = s_entrySubtexts.find(key);
-      if (it != s_entrySubtexts.end() && !it->second.text.empty()) {
-      info.text = it->second.text;
-      info.offsetX = it->second.offsetX;
-      info.offsetY = it->second.offsetY;
-      info.fontSize = it->second.fontSize;
-      info.color = it->second.color;
-      info.hasSubtext = true;
-      }
-      return info;
-   }
-
-   // (Managed indices no longer need adjusting on insert/remove: the metadata lives
-   // on the Wheel and moves with it, so there is no index-keyed side table to fix up.)
+   // (Nothing needs adjusting on insert/remove any more: managed metadata lives on
+   // the Wheel and entry captions live on the WheelEntry, so both move with their
+   // owner and there is no index-keyed side table left to fix up.)
 
    // ============================================================================
    // API Implementation Functions
@@ -277,15 +228,49 @@ namespace WheelerAPI
       int32_t index;
       if (config->position < 0 || config->position >= static_cast<int32_t>(wheels.size())) {
       index = static_cast<int32_t>(wheels.size());
-      wheels.push_back(std::move(wheel));
+      wheels.push_back(std::move(wheel));  // appended past the end, nothing shifts
       } else {
       index = config->position;
       wheels.insert(wheels.begin() + index, std::move(wheel));
+
+      // Every wheel from `index` up moved one slot along, the active one with it.
+      // Leaving the index alone would leave the player pointing at whichever wheel
+      // took its place. The active wheel object is unchanged here, so its hovered
+      // entry stays valid — unlike the deletion paths, which can destroy it.
+      const int activeIdx = Wheeler::GetActiveWheelIndex();
+      if (activeIdx >= index) {
+        Wheeler::SetActiveWheelIndex(activeIdx + 1);
+      }
       }
 
       DEBUG("WheelerAPI: Created managed wheel at index {} with {} entries (client: {}, showLabel: {})",
       index, config->numEntries, config->clientName ? config->clientName : "N/A", config->showLabel);
       return index;
+   }
+
+   // Settle the active wheel index after wheels have been erased. Callers pass the
+   // index already decremented once per erased slot BELOW it — erasing there shifts
+   // every later wheel down, so leaving the index alone silently moves the player
+   // onto a different wheel. a_activeWasErased means the wheel the player was on is
+   // the one that went away, in which case the index now names whichever wheel slid
+   // into its place and the hover left behind no longer belongs to it.
+   // Caller must hold the wheel-data lock exclusively.
+   static void SettleActiveWheelLocked(int a_activeIdx, bool a_activeWasErased)
+   {
+      auto& wheels = Wheeler::GetWheels();
+      if (wheels.empty()) {
+      return;
+      }
+      if (a_activeIdx >= static_cast<int>(wheels.size())) {
+      a_activeIdx = static_cast<int>(wheels.size()) - 1;
+      }
+      if (a_activeIdx < 0) {
+      a_activeIdx = 0;
+      }
+      Wheeler::SetActiveWheelIndex(a_activeIdx);
+      if (a_activeWasErased) {
+      wheels[a_activeIdx]->SetHoveredEntryIndex(-1);
+      }
    }
 
    static Result API_DeleteManagedWheel(int32_t wheelIndex)
@@ -310,14 +295,16 @@ namespace WheelerAPI
       return Result::LastWheel;
       }
 
+      int activeIdx = Wheeler::GetActiveWheelIndex();
+      const bool activeWasErased = (wheelIndex == activeIdx);
+
       wheels.erase(wheels.begin() + wheelIndex);
       s_managedWheelCount.fetch_sub(1, std::memory_order_relaxed);
 
-      // Adjust active wheel index if needed
-      int activeIdx = Wheeler::GetActiveWheelIndex();
-      if (activeIdx >= static_cast<int>(wheels.size())) {
-      Wheeler::SetActiveWheelIndex(static_cast<int>(wheels.size()) - 1);
+      if (wheelIndex < activeIdx) {
+      --activeIdx;  // the wheels above the erased slot all shifted down one
       }
+      SettleActiveWheelLocked(activeIdx, activeWasErased);
 
       DEBUG("WheelerAPI: Deleted managed wheel at index {}", wheelIndex);
       return Result::OK;
@@ -351,6 +338,10 @@ namespace WheelerAPI
       }
 
       // Never remove the last remaining wheel (Wheeler must keep >= 1).
+      // Track the active index as we go rather than afterwards: the loop can stop
+      // early on that guard, so only the slots actually erased may shift it.
+      int activeIdx = Wheeler::GetActiveWheelIndex();
+      bool activeWasErased = false;
       int32_t deleted = 0;
       for (auto it = toDelete.rbegin(); it != toDelete.rend(); ++it) {
       if (wheels.size() <= 1) {
@@ -359,12 +350,14 @@ namespace WheelerAPI
       wheels.erase(wheels.begin() + *it);
       s_managedWheelCount.fetch_sub(1, std::memory_order_relaxed);
       ++deleted;
+      if (*it < activeIdx) {
+        --activeIdx;
+      } else if (*it == activeIdx) {
+        activeWasErased = true;
+      }
       }
 
-      int activeIdx = Wheeler::GetActiveWheelIndex();
-      if (activeIdx >= static_cast<int>(wheels.size())) {
-      Wheeler::SetActiveWheelIndex(static_cast<int>(wheels.size()) - 1);
-      }
+      SettleActiveWheelLocked(activeIdx, activeWasErased);
 
       DEBUG("WheelerAPI: Deleted {} managed wheel(s) for client '{}'", deleted, clientName);
       return deleted;
@@ -688,47 +681,52 @@ namespace WheelerAPI
       return Result::NotInitialized;
       }
 
-      // Verify it's a managed wheel and that the wheel/entry exist (single lock).
-      {
+      // The caption is stored on the entry itself, so it follows that entry through
+      // any later reindexing instead of being stranded on a (wheel, entry) position.
+      //
+      // Shared is enough: nothing in _wheels is modified here, and the write itself
+      // is serialized by the entry's own lock. Taking it exclusively would queue a
+      // writer on every call and stall the render thread, and clients set captions
+      // hundreds of times a session.
       std::shared_lock lock(Wheeler::GetWheelDataLock());
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
-        return Result::InvalidWheelIndex;
+      return Result::InvalidWheelIndex;
       }
       if (!wheel->IsManaged()) {
-        return Result::NotManagedWheel;
+      return Result::NotManagedWheel;
       }
       WheelEntry* entry = wheel->GetEntry(entryIndex);
       if (!entry) {
-        return Result::InvalidEntryIndex;
+      return Result::InvalidEntryIndex;
       }
-      }
-
-      uint32_t key = MakeSubtextKey(wheelIndex, entryIndex);
 
       // Clear subtext if config is null or text is null/empty
       if (!config || !config->text || config->text[0] == '\0') {
-      std::unique_lock lock(s_subtextLock);
-      s_entrySubtexts.erase(key);
+      entry->ClearSubtext();
       DEBUG("WheelerAPI: Cleared subtext for wheel {} entry {}", wheelIndex, entryIndex);
       return Result::OK;
       }
 
-      // Set subtext with config values (use defaults if values are 0)
-      SubtextData data;
-      data.text = config->text;
-      data.offsetX = config->offsetX;  // 0 is valid for centered
-      data.offsetY = (config->offsetY != 0.0f) ? config->offsetY : DEFAULT_SUBTEXT_OFFSET_Y;
-      data.fontSize = (config->fontSize != 0.0f) ? config->fontSize : DEFAULT_SUBTEXT_FONT_SIZE;
-      data.color = (config->color != 0) ? config->color : DEFAULT_SUBTEXT_COLOR;
-
-      {
-      std::unique_lock lock(s_subtextLock);
-      s_entrySubtexts[key] = std::move(data);
+      // EntrySubtext's member initializers carry the defaults; a 0 in the config
+      // means "leave the default alone" for everything except offsetX, where 0 is
+      // a meaningful value (centered).
+      EntrySubtext subtext;
+      subtext.text = config->text;
+      subtext.offsetX = config->offsetX;
+      if (config->offsetY != 0.0f) {
+      subtext.offsetY = config->offsetY;
+      }
+      if (config->fontSize != 0.0f) {
+      subtext.fontSize = config->fontSize;
+      }
+      if (config->color != 0) {
+      subtext.color = config->color;
       }
 
       DEBUG("WheelerAPI: Set subtext '{}' for wheel {} entry {} (offset: {},{}, size: {}, color: {:08X})",
-      config->text, wheelIndex, entryIndex, data.offsetX, data.offsetY, data.fontSize, data.color);
+      subtext.text, wheelIndex, entryIndex, subtext.offsetX, subtext.offsetY, subtext.fontSize, subtext.color);
+      entry->SetSubtext(std::move(subtext));
       return Result::OK;
    }
 

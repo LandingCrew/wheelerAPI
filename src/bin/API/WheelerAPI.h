@@ -20,9 +20,15 @@
 //
 // IMPORTANT: Callbacks should execute quickly to avoid blocking the render loop.
 // If you need to do heavy processing, queue work to another thread.
+//
+// Calling back into this API from a callback is safe: Wheeler never invokes one
+// while holding its wheel-data lock. Wheel indices may have changed by the time a
+// callback runs, though, so re-resolve them with GetManagedWheelsForClient()
+// rather than caching them across edit-mode exits and save loads.
 
 #include <cstddef>  // size_t
 #include <cstdint>
+#include <string>  // GetManagedWheelClientNameSafe, ManagedWheelStyling::indicatorText
 
 #ifndef WHEELER_API
 #   ifdef WHEELER_EXPORTS
@@ -243,7 +249,10 @@ namespace WheelerAPI
    void SetInitialized(bool initialized);
 
    // Notification functions - called by Wheeler to notify registered callbacks
-   void NotifyItemActivated(int32_t wheelIndex, int32_t entryIndex, int32_t itemIndex, uint32_t formID, bool isPrimary);
+   // clientName is resolved by the caller while it holds the wheel-data lock;
+   // notifications dispatch after that lock is released, so this cannot look it up.
+   void NotifyItemActivated(int32_t wheelIndex, int32_t entryIndex, int32_t itemIndex, uint32_t formID, bool isPrimary,
+      const std::string& clientName);
    void NotifyEditModeChanged(bool entered, const WheelChange* changes, size_t changeCount);
    void NotifyWheelStateChanged(int32_t wheelIndex, bool isOpen);
 
@@ -277,21 +286,6 @@ namespace WheelerAPI
       bool isValid;  // false if wheel is not managed
    };
    ManagedWheelStyling GetManagedWheelStyling(int32_t wheelIndex);
-
-   // Internal storage struct for entry subtext (includes computed values)
-   struct EntrySubtextInfo
-   {
-      std::string text;
-      float offsetX;
-      float offsetY;
-      float fontSize;
-      uint32_t color;
-      bool hasSubtext;  // true if text is non-empty
-   };
-
-   // Get entry subtext info for rendering
-   // Used internally by WheelEntry::drawSlot()
-   EntrySubtextInfo GetEntrySubtextInfo(int32_t wheelIndex, int32_t entryIndex);
 
 }  // namespace WheelerAPI
 

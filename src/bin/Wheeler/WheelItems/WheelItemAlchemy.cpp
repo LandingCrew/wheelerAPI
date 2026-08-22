@@ -163,5 +163,5 @@ void WheelItemAlchemy::applyPoison()
       return;
    }
    RE::ActorEquipManager::GetSingleton()->EquipObject(pc, this->_alchemyItem);
-   Wheeler::TryCloseWheeler(); // close wheeler for the pop-up
+   Wheeler::RequestClose();  // close wheeler for the pop-up, once activation unwinds
 }

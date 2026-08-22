@@ -1,11 +1,30 @@
 #pragma once
+#include <optional>
 #include <shared_mutex>
+#include <string>
 #include "nlohmann/json.hpp"
 #include "imgui.h"
 
 #include "bin/Animation/TimeInterpolator/TimeFloatInterpolator.h"
 #include "bin/Animation/TimeBounceInterpolator.h"
 class WheelItem;
+
+/// <summary>
+/// A caption a client draws beneath an entry, set through the API's
+/// SetManagedWheelEntrySubtext. It is stored on the entry rather than in an
+/// index-keyed side table so that it travels with the entry when wheels are
+/// inserted, deleted, or compacted — the same reason WheelManagedInfo lives on
+/// the Wheel rather than beside it.
+/// </summary>
+struct EntrySubtext
+{
+   std::string text;
+   float       offsetX = 0.0f;
+   float       offsetY = 20.0f;
+   float       fontSize = 28.0f;
+   uint32_t    color = 0xB0FFFFFF;  // 70% white (ABGR for ImGui)
+};
+
 class WheelEntry
 {
 public:
@@ -44,9 +63,7 @@ public:
    /// Draw the content in slot and (if applicable) highlight region of this wheel entry.
    /// This function should be called after DrawBackGround to prevent background from being drawn over the content.
    /// </summary>
-   /// <param name="a_wheelIndex">Index of the wheel (for subtext lookup)</param>
-   /// <param name="a_entryIndex">Index of this entry (for subtext lookup)</param>
-   void DrawSlotAndHighlight(ImVec2 a_wheelCenter, ImVec2 a_entryCenter, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs, int32_t a_wheelIndex = -1, int32_t a_entryIndex = -1);
+   void DrawSlotAndHighlight(ImVec2 a_wheelCenter, ImVec2 a_entryCenter, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs);
 
    /// <summary>
    /// Get the radius changes made by arcRadiusIncInterpolator. Use this function to calculate the offset of item center.
@@ -102,13 +119,20 @@ public:
    // Clear all items
    void ClearItems();
 
+   /// <summary>
+   /// Set or drop this entry's client caption. Both take the entry lock; the
+   /// draw path reads _subtext directly because it already holds that lock.
+   /// </summary>
+   void SetSubtext(EntrySubtext a_subtext);
+   void ClearSubtext();
+
     void SerializeIntoJsonObj(nlohmann::json& a_json);
    static std::unique_ptr<WheelEntry> SerializeFromJsonObj(const nlohmann::json& a_json, SKSE::SerializationInterface* a_intfc);
 
    void ResetAnimation();
 
 private:
-   void drawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs, int32_t a_wheelIndex = -1, int32_t a_entryIndex = -1);
+   void drawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs);
    void drawHighlight(ImVec2 a_center, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs);
    
    bool _prevHovered = false;  // used to detect when the mouse enters the entry
@@ -116,6 +140,7 @@ private:
 
    std::shared_mutex _lock;
    std::vector<std::shared_ptr<WheelItem>> _items;
+   std::optional<EntrySubtext> _subtext;
    
    TimeFloatInterpolator _arcRadiusIncInterpolator;  // for animating the arc radius's increase when the entry is hovered
    TimeFloatInterpolator _arcInnerAngleIncInterpolator;   // for animating the arc's angle increase when the entry is hovered

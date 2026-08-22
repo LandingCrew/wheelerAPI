@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <mutex>
 #include <shared_mutex>
 #include "nlohmann/json.hpp"
@@ -58,6 +59,14 @@ public:
    
    static void TryOpenWheeler();
    static void TryCloseWheeler();
+
+   /// <summary>
+   /// Ask for the wheel to close on the next update, without taking the
+   /// wheel-data lock. This is what item activation must use: it already runs
+   /// under the lock, so calling TryCloseWheeler() from there would re-enter a
+   /// mutex that is not recursive.
+   /// </summary>
+   static void RequestClose();
 
    static void OpenWheeler();
    static void CloseWheeler();
@@ -211,7 +220,20 @@ private:
    static inline float _openTimer = 0;
    static inline float _closeTimer = 0;
 
-   static inline std::shared_mutex _wheelDataLock;  // global lock
+   /// <summary>
+   /// Guards _wheels and the wheel/UI state reached through it.
+   ///
+   /// Update() is the one writer permitted to hold this shared: it is the sole
+   /// render thread, and every other writer -- input entry points and the whole
+   /// API surface -- takes it exclusively, so the two never overlap. The only
+   /// other shared holder is SerializeIntoJsonObj(), which is read-only.
+   ///
+   /// Adding a second writer that takes it shared would silently break that
+   /// invariant; take it exclusively instead. The cost is that an input event
+   /// waits for the frame in flight, which is not perceptible because the wheel
+   /// is redrawn by Update() either way.
+   /// </summary>
+   static inline std::shared_mutex _wheelDataLock;
 
    // Whether the wheel should enter edit mode. Edit mode toggles whenever a game inventory UI opens up.
    static bool shouldBeInEditMode(RE::UI* a_ui);
@@ -221,6 +243,46 @@ private:
 
    static void enterEditMode();
    static void exitEditMode();
+
+   /// <summary>
+   /// Bodies of CloseWheeler() and DeleteCurrentWheel() for callers that already
+   /// hold _wheelDataLock. The public wrappers take the lock and delegate here;
+   /// calling a wrapper from inside a locked scope would re-enter a mutex that is
+   /// not recursive.
+   /// </summary>
+   static void closeWheelerLocked();
+   static void deleteCurrentWheelLocked();
+   static void tryCloseWheelerLocked();
+
+   // Set by RequestClose() and consumed by Update(). Atomic because RequestClose()
+   // takes no lock at all and Update() holds only a shared one, so the write and
+   // the read-then-clear are not mutually excluded.
+   static inline std::atomic<bool> _closeRequested{ false };
+
+   /// <summary>
+   /// Raise a client notification, or park it if the calling thread is inside a
+   /// DeferredNotifications scope. Every Wheeler path that reaches WheelerAPI's
+   /// Notify* functions goes through these instead of calling them directly.
+   /// </summary>
+   static void notifyWheelStateChanged(int32_t a_wheelIndex, bool a_isOpen);
+   static void notifyEditModeChanged(bool a_entered);
+   static void notifyItemActivated(int32_t a_wheelIndex, int32_t a_entryIndex, int32_t a_itemIndex, uint32_t a_formID, bool a_isPrimary);
+
+   /// <summary>
+   /// Withholds client notifications for as long as it is alive, dispatching them
+   /// from its destructor. _wheelDataLock is not recursive, and a callback is free
+   /// to call back into WheelerAPI — every public API entry re-locks it — so a
+   /// notification raised under the lock would hang the thread that raised it.
+   /// Declare this *before* the lock guard in the scope that takes the lock, so
+   /// that it unwinds last, i.e. after the lock has been released.
+   /// </summary>
+   struct DeferredNotifications
+   {
+      DeferredNotifications();
+      ~DeferredNotifications();
+      DeferredNotifications(const DeferredNotifications&) = delete;
+      DeferredNotifications& operator=(const DeferredNotifications&) = delete;
+   };
 
    /// <summary>
    /// Body of Clear(). Caller must already hold _wheelDataLock exclusively.

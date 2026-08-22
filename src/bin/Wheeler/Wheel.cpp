@@ -10,7 +10,7 @@ Wheel::~Wheel()
     this->Clear();
 }
 void Wheel::Draw(ImVec2 a_wheelCenter, float a_cursorAngle, bool a_cursorCentered, RE::TESObjectREFR::InventoryItemMap& a_imap,
-   DrawArgs a_drawArgs, int32_t a_wheelIndex)
+   DrawArgs a_drawArgs)
 {
    try {
       using namespace Config::Styling::Wheel;
@@ -123,7 +123,7 @@ void Wheel::Draw(ImVec2 a_wheelCenter, float a_cursorAngle, bool a_cursorCentere
 
       // draw foreground in a separate pass to avoid overlapping
       for (int entryIdx = 0; entryIdx < entryRuntimeDataVec.size(); entryIdx++) {
-      _entries[entryIdx]->DrawSlotAndHighlight(a_wheelCenter, entryRuntimeDataVec[entryIdx].first, entryRuntimeDataVec[entryIdx].second, a_imap, a_drawArgs, a_wheelIndex, entryIdx);
+      _entries[entryIdx]->DrawSlotAndHighlight(a_wheelCenter, entryRuntimeDataVec[entryIdx].first, entryRuntimeDataVec[entryIdx].second, a_imap, a_drawArgs);
       }
 
       // draw cursor indicator

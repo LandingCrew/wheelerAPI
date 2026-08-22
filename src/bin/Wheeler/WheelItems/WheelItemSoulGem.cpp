@@ -26,34 +26,51 @@ namespace
       return formID == AZURAS_STAR || formID == THE_BLACK_STAR;
    }
 
+   // What a hand is actually holding, taken straight off the actor's process
+   // instead of searching the inventory for it.
+   //
+   // A two-handed weapon lives in bothHands and is reported for neither hand slot,
+   // which is why GetEquippedObject(true) misses it entirely. It charges through
+   // the right-hand actor value, so it is reported here for the right hand only.
+   RE::InventoryEntryData* equippedEntry(RE::PlayerCharacter* a_pc, bool a_leftHand)
+   {
+      auto* process = a_pc ? a_pc->GetActorRuntimeData().currentProcess : nullptr;
+      auto* middleHigh = process ? process->middleHigh : nullptr;
+      if (!middleHigh) {
+      return nullptr;
+      }
+      if (middleHigh->bothHands) {
+      return a_leftHand ? nullptr : middleHigh->bothHands;
+      }
+      return a_leftHand ? middleHigh->leftHand : middleHigh->rightHand;
+   }
+
    // Capacity of a player-applied enchantment, which lives on the worn stack's
    // ExtraEnchantment rather than on the base form.
    //
-   // This walks the player's inventory changes, so it is called ONLY when the form
-   // declares no capacity of its own. Calling it unconditionally -- as a revision
-   // of this file briefly did -- made every activation walk that list, and
-   // recharging then crashed reproducibly on the following frame, in
-   // Wheeler::Update where GetInventory() copies the same list. Keep the inventory
-   // untouched on the common path.
-   float wornEnchantmentCapacity(RE::PlayerCharacter* a_pc, RE::TESBoundObject* a_bound)
+   // Reading it off the hand's own entry is what keeps the player's inventory
+   // untouched here. An earlier revision searched InventoryChanges::entryList for
+   // the worn stack, and recharging then crashed reproducibly on the following
+   // frame, in Wheeler::Update where GetInventory() copies that same list. The
+   // gate that was meant to keep the search rare could not work: a plain sword
+   // and a player-enchanted one are indistinguishable on the form, so every
+   // ordinary weapon fell through to it.
+   //
+   // The entry is already the one stack the hand holds, so the ExtraWorn filter
+   // the inventory search needed to pick the worn copy out is no longer required.
+   float wornEnchantmentCapacity(RE::InventoryEntryData* a_entry)
    {
-      RE::InventoryChanges* changes = a_pc ? a_pc->GetInventoryChanges() : nullptr;
-      if (!a_bound || !changes || !changes->entryList) {
+      if (!a_entry || !a_entry->extraLists) {
       return 0.0f;
       }
 
-      for (RE::InventoryEntryData* entry : *changes->entryList) {
-      if (!entry || entry->object != a_bound || !entry->extraLists) {
+      for (RE::ExtraDataList* xList : *a_entry->extraLists) {
+      if (!xList) {
         continue;
       }
-      for (RE::ExtraDataList* xList : *entry->extraLists) {
-        if (!xList || !(xList->HasType<RE::ExtraWorn>() || xList->HasType<RE::ExtraWornLeft>())) {
-           continue;
-        }
-        auto* xEnch = xList->GetByType<RE::ExtraEnchantment>();
-        if (xEnch && xEnch->enchantment && xEnch->charge != 0) {
-           return static_cast<float>(xEnch->charge);
-        }
+      auto* xEnch = xList->GetByType<RE::ExtraEnchantment>();
+      if (xEnch && xEnch->enchantment && xEnch->charge != 0) {
+        return static_cast<float>(xEnch->charge);
       }
       }
       return 0.0f;
@@ -64,12 +81,13 @@ namespace
    //
    // A base-enchanted weapon, and a staff, declare capacity on the form. A weapon
    // the player enchanted themselves declares nothing there at all -- formEnchanting
-   // is null and amountofEnchantment is 0 -- and carries it on the worn stack
-   // instead, so the form must not be used to rule the weapon out. Only that case
-   // reaches the inventory.
-   float equippedWeaponCapacity(RE::PlayerCharacter* a_pc, RE::TESForm* a_equipped)
+   // is null and amountofEnchantment is 0, exactly as a plain weapon does -- and
+   // carries it on the worn stack instead, so the form cannot be used to rule the
+   // weapon out. Both cases now cost the same lookup.
+   float equippedWeaponCapacity(RE::PlayerCharacter* a_pc, bool a_leftHand)
    {
-      auto* weapon = a_equipped ? a_equipped->As<RE::TESObjectWEAP>() : nullptr;
+      RE::InventoryEntryData* entry = equippedEntry(a_pc, a_leftHand);
+      auto* weapon = entry && entry->object ? entry->object->As<RE::TESObjectWEAP>() : nullptr;
       auto* enchantable = weapon ? weapon->As<RE::TESEnchantableForm>() : nullptr;
       if (!enchantable) {
       return 0.0f;
@@ -81,7 +99,7 @@ namespace
       return static_cast<float>(enchantable->amountofEnchantment);
       }
 
-      return wornEnchantmentCapacity(a_pc, weapon);
+      return wornEnchantmentCapacity(entry);
    }
 }
 
@@ -246,7 +264,7 @@ void WheelItemSoulGem::rechargeEquippedWeapon()
    float current = 0.0f;
    for (const auto& hand : { std::pair{ false, RE::ActorValue::kRightItemCharge },
            std::pair{ true, RE::ActorValue::kLeftItemCharge } }) {
-      const float capacity = equippedWeaponCapacity(pc, pc->GetEquippedObject(hand.first));
+      const float capacity = equippedWeaponCapacity(pc, hand.first);
       if (capacity <= 0.0f) {
       continue;
       }

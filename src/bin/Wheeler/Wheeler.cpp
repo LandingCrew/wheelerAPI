@@ -17,8 +17,124 @@
 #include "WheelItems/WheelItemSpell.h"
 #include "WheelItems/WheelItemWeapon.h"
 
+namespace
+{
+   // A client callback is free to call back into WheelerAPI, and every public API
+   // entry re-locks Wheeler's wheel-data lock — which is not recursive, so a
+   // notification fired while that lock is held hangs the calling thread. Locked
+   // paths park their notifications here instead, and Wheeler::DeferredNotifications
+   // dispatches them once the lock is gone. Thread-local because the deferral only
+   // ever concerns the thread that holds the lock.
+   struct PendingNotification
+   {
+      enum class Kind
+      {
+         KWheelState,
+         KEditMode,
+         KItemActivated
+      };
+
+      Kind kind;
+      // Resolved while the lock is still held: NotifyItemActivated used to look it
+      // up itself, through Wheeler::GetWheelByIndex, which reads _wheels unlocked.
+      // By the time the queue drains the lock is gone and a client thread may have
+      // erased that wheel.
+      std::string clientName;
+      int32_t wheelIndex = -1;
+      int32_t entryIndex = -1;
+      int32_t itemIndex = -1;
+      uint32_t formID = 0;
+      bool flag = false;  // isOpen (KWheelState), entered (KEditMode), isPrimary (KItemActivated)
+   };
+
+   thread_local std::vector<PendingNotification> g_pendingNotifications;
+   thread_local int g_deferDepth = 0;
+}
+
+Wheeler::DeferredNotifications::DeferredNotifications()
+{
+   g_deferDepth++;
+}
+
+Wheeler::DeferredNotifications::~DeferredNotifications()
+{
+   if (--g_deferDepth > 0) {
+      return;  // an enclosing scope still holds the lock
+   }
+   // Swap the queue out first: a callback may re-enter Wheeler and queue more
+   // notifications, which must not reallocate the vector being iterated here.
+   std::vector<PendingNotification> pending;
+   pending.swap(g_pendingNotifications);
+
+   // A destructor is implicitly noexcept, and these invoke function pointers from
+   // other plugins. Letting one throw through here would call std::terminate and
+   // take the game down with no unwind.
+   try {
+   for (const PendingNotification& notification : pending) {
+      switch (notification.kind) {
+      case PendingNotification::Kind::KWheelState:
+         WheelerAPI::NotifyWheelStateChanged(notification.wheelIndex, notification.flag);
+         break;
+      case PendingNotification::Kind::KEditMode:
+         WheelerAPI::NotifyEditModeChanged(notification.flag, nullptr, 0);
+         break;
+      case PendingNotification::Kind::KItemActivated:
+         WheelerAPI::NotifyItemActivated(notification.wheelIndex, notification.entryIndex,
+            notification.itemIndex, notification.formID, notification.flag,
+            notification.clientName);
+         break;
+      }
+   }
+   } catch (const std::exception& e) {
+      logger::error("Exception dispatching a deferred notification: {}", e.what());
+   } catch (...) {
+      logger::error("Unknown exception dispatching a deferred notification");
+   }
+}
+
+void Wheeler::notifyWheelStateChanged(int32_t a_wheelIndex, bool a_isOpen)
+{
+   if (g_deferDepth > 0) {
+      PendingNotification notification{ PendingNotification::Kind::KWheelState };
+      notification.wheelIndex = a_wheelIndex;
+      notification.flag = a_isOpen;
+      g_pendingNotifications.push_back(notification);
+      return;
+   }
+   WheelerAPI::NotifyWheelStateChanged(a_wheelIndex, a_isOpen);
+}
+
+void Wheeler::notifyEditModeChanged(bool a_entered)
+{
+   if (g_deferDepth > 0) {
+      PendingNotification notification{ PendingNotification::Kind::KEditMode };
+      notification.flag = a_entered;
+      g_pendingNotifications.push_back(notification);
+      return;
+   }
+   WheelerAPI::NotifyEditModeChanged(a_entered, nullptr, 0);
+}
+
+void Wheeler::notifyItemActivated(int32_t a_wheelIndex, int32_t a_entryIndex, int32_t a_itemIndex, uint32_t a_formID, bool a_isPrimary)
+{
+   if (g_deferDepth > 0) {
+      PendingNotification notification{ PendingNotification::Kind::KItemActivated };
+      notification.clientName = WheelerAPI::GetManagedWheelClientNameSafe(a_wheelIndex);
+      notification.wheelIndex = a_wheelIndex;
+      notification.entryIndex = a_entryIndex;
+      notification.itemIndex = a_itemIndex;
+      notification.formID = a_formID;
+      notification.flag = a_isPrimary;
+      g_pendingNotifications.push_back(notification);
+      return;
+   }
+   WheelerAPI::NotifyItemActivated(a_wheelIndex, a_entryIndex, a_itemIndex, a_formID, a_isPrimary,
+      WheelerAPI::GetManagedWheelClientNameSafe(a_wheelIndex));
+}
+
 void Wheeler::Update(float a_deltaTime)
 {
+   DeferredNotifications defer;  // declared first so it unwinds after `lock`
    std::shared_lock<std::shared_mutex> lock(_wheelDataLock);
    using namespace Config::Styling::Wheel;
    if (!RE::PlayerCharacter::GetSingleton() || !RE::PlayerCharacter::GetSingleton()->Is3DLoaded()) {
@@ -28,6 +144,10 @@ void Wheeler::Update(float a_deltaTime)
    auto ui = RE::UI::GetSingleton();
    if (!ui) {
       return;
+   }
+
+   if (_closeRequested.exchange(false, std::memory_order_relaxed)) {
+      tryCloseWheelerLocked();  // an activated item asked for the wheel to shut
    }
 
    if (_state == WheelState::KClosed) {                  // should close
@@ -92,7 +212,7 @@ void Wheeler::Update(float a_deltaTime)
       _closeTimer += a_deltaTime;
       fadeLerp = std::fmaxf(1 - _closeTimer / Config::Animation::FadeTime, 0.f);
       if (_closeTimer >= Config::Animation::FadeTime) {
-        CloseWheeler();
+        closeWheelerLocked();  // Update() already holds the lock
         _closeTimer = 0;
       }
       break;
@@ -127,7 +247,7 @@ void Wheeler::Update(float a_deltaTime)
       Drawer::draw_text(wheelCenter.x, wheelCenter.y, Texts::GetText(Texts::TextType::NoWheelPresent), C_SKYRIMWHITE, 40.F, drawArgs);
       } else {
       bool isCursorCentered = _cursorPos.x == 0 && _cursorPos.y == 0;
-      _wheels[_activeWheelIdx]->Draw(wheelCenter, cursorAngle, isCursorCentered, inv, drawArgs, static_cast<int32_t>(_activeWheelIdx));
+      _wheels[_activeWheelIdx]->Draw(wheelCenter, cursorAngle, isCursorCentered, inv, drawArgs);
       }
 
 
@@ -195,6 +315,7 @@ void Wheeler::Update(float a_deltaTime)
 
 void Wheeler::Clear()
 {
+   DeferredNotifications defer;  // declared first so it unwinds after `lock`
    std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    clearUnmanagedLocked();
 }
@@ -202,7 +323,7 @@ void Wheeler::Clear()
 void Wheeler::clearUnmanagedLocked()
 {
    if (_state != WheelState::KClosed) {
-      CloseWheeler();  // force close menu, since we're loading items
+      closeWheelerLocked();  // caller already holds the lock exclusively
    }
    if (_editMode) {
       exitEditMode();
@@ -289,11 +410,26 @@ void Wheeler::TryOpenWheeler()
 
 void Wheeler::TryCloseWheeler()
 {
+   DeferredNotifications defer;  // declared first so it unwinds after `lock`
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
+   tryCloseWheelerLocked();
+}
+
+void Wheeler::RequestClose()
+{
+   // Item activation runs with the wheel-data lock held, so an item that wants the
+   // wheel shut cannot call TryCloseWheeler() — that would re-lock a non-recursive
+   // mutex on the same thread. Raise a flag instead; Update() acts on it next frame.
+   _closeRequested.store(true, std::memory_order_relaxed);
+}
+
+void Wheeler::tryCloseWheelerLocked()
+{
    if (_state == WheelState::KClosed || _state == WheelState::KClosing) {
       return;
    }
    if (Config::Animation::FadeTime == 0) {
-      CloseWheeler();  // close directly
+      closeWheelerLocked();  // close directly
    } else {
       // set timescale to 1 prior to closing the wheel to avoid weirdness
       if (Config::Styling::Wheel::SlowTimeScale <= 1) {
@@ -308,6 +444,8 @@ void Wheeler::TryCloseWheeler()
 
 void Wheeler::OpenWheeler()
 {
+   DeferredNotifications defer;  // declared first so it unwinds after `lock`
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    if (!RE::PlayerCharacter::GetSingleton() || !RE::PlayerCharacter::GetSingleton()->Is3DLoaded()) {
       return;
    }
@@ -376,11 +514,18 @@ void Wheeler::OpenWheeler()
       }
 
       // Notify API clients that wheel opened
-      WheelerAPI::NotifyWheelStateChanged(static_cast<int32_t>(_activeWheelIdx), true);
+      notifyWheelStateChanged(static_cast<int32_t>(_activeWheelIdx), true);
    }
 }
 
 void Wheeler::CloseWheeler()
+{
+   DeferredNotifications defer;  // declared first so it unwinds after `lock`
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
+   closeWheelerLocked();
+}
+
+void Wheeler::closeWheelerLocked()
 {
    if (!RE::PlayerCharacter::GetSingleton() || !RE::PlayerCharacter::GetSingleton()->Is3DLoaded()) {
       return;
@@ -406,12 +551,13 @@ void Wheeler::CloseWheeler()
 
    // Notify API clients that wheel closed
    if (wasOpen) {
-      WheelerAPI::NotifyWheelStateChanged(static_cast<int32_t>(_activeWheelIdx), false);
+      notifyWheelStateChanged(static_cast<int32_t>(_activeWheelIdx), false);
    }
 }
 
 void Wheeler::UpdateCursorPosMouse(float a_deltaX, float a_deltaY)
 {
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    if (_state == WheelState::KClosed) {
       return;
    }
@@ -434,6 +580,7 @@ void Wheeler::UpdateCursorPosMouse(float a_deltaX, float a_deltaY)
 
 void Wheeler::UpdateCursorPosGamepad(float a_x, float a_y)
 {
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    if (_state == WheelState::KClosed) {
       return;
    }
@@ -450,6 +597,7 @@ void Wheeler::UpdateCursorPosGamepad(float a_x, float a_y)
 
 void Wheeler::NextWheel()
 {
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    if (_state == WheelState::KOpened) {
       if (_wheels.empty()) {
       return;
@@ -496,6 +644,7 @@ void Wheeler::NextWheel()
 
 void Wheeler::PrevWheel()
 {
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    if (_state == WheelState::KOpened) {
       if (_wheels.empty()) {
       return;
@@ -544,6 +693,10 @@ void Wheeler::PrevWheel()
 
 void Wheeler::PrevItemInEntry()
 {
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
+   if (_wheels.empty()) {
+      return;
+   }
    if (_state == WheelState::KOpened) {
       _wheels[_activeWheelIdx]->PrevItemInHoveredEntry();
    }
@@ -551,6 +704,10 @@ void Wheeler::PrevItemInEntry()
 
 void Wheeler::NextItemInEntry()
 {
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
+   if (_wheels.empty()) {
+      return;
+   }
    if (_state == WheelState::KOpened) {
       _wheels[_activeWheelIdx]->NextItemInHoveredEntry();
    }
@@ -569,6 +726,8 @@ bool Wheeler::GetCursorAngleRadian(float& r_ret)
 
 void Wheeler::ActivateHoveredEntrySecondary()
 {
+   DeferredNotifications defer;  // declared first so it unwinds after `lock`
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    if (_wheels.empty()) {
       return;
    }
@@ -586,7 +745,7 @@ void Wheeler::ActivateHoveredEntrySecondary()
 
       if (activeWheel->IsEmpty()) {         // empty wheel, we can only delete in edit mode.
       if (_editMode && _wheels.size() > 1) {  // we have more than one wheel, so it's safe to delete this one.
-        DeleteCurrentWheel();
+        deleteCurrentWheelLocked();  // we already hold the lock exclusively
       }
       } else {
       // Capture item info before activation for callback (only if not in edit mode)
@@ -612,7 +771,7 @@ void Wheeler::ActivateHoveredEntrySecondary()
 
       // Notify callback if we had valid item info (not in edit mode)
       if (!_editMode && formID != 0) {
-        WheelerAPI::NotifyItemActivated(
+        notifyItemActivated(
            static_cast<int32_t>(_activeWheelIdx),
            entryIndex,
            itemIndex,
@@ -626,6 +785,8 @@ void Wheeler::ActivateHoveredEntrySecondary()
 
 void Wheeler::ActivateHoveredEntryPrimary()
 {
+   DeferredNotifications defer;  // declared first so it unwinds after `lock`
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    if (_wheels.empty()) {
       return;
    }
@@ -655,7 +816,7 @@ void Wheeler::ActivateHoveredEntryPrimary()
 
       // Notify callback if we had valid item info (not in edit mode)
       if (!_editMode && formID != 0) {
-      WheelerAPI::NotifyItemActivated(
+      notifyItemActivated(
         static_cast<int32_t>(_activeWheelIdx),
         entryIndex,
         itemIndex,
@@ -668,6 +829,7 @@ void Wheeler::ActivateHoveredEntryPrimary()
 
 void Wheeler::ActivateHoveredEntrySpecial()
 {
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    if (_wheels.empty()) {
       return;
    }
@@ -709,6 +871,11 @@ void Wheeler::PushWheel()
 void Wheeler::DeleteCurrentWheel()
 {
    std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
+   deleteCurrentWheelLocked();
+}
+
+void Wheeler::deleteCurrentWheelLocked()
+{
    if (!_editMode || _state == WheelState::KClosed) {
       return;
    }
@@ -829,6 +996,7 @@ bool Wheeler::IsInEditMode() { return _editMode; }
 
 void Wheeler::ReloadFromJsonObj(const nlohmann::json& j_wheeler, SKSE::SerializationInterface* a_intfc)
 {
+   DeferredNotifications defer;  // declared first so it unwinds after `lock`
    std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    clearUnmanagedLocked();
    deserializeLocked(j_wheeler, a_intfc);
@@ -857,6 +1025,9 @@ void Wheeler::deserializeLocked(const nlohmann::json& j_wheeler, SKSE::Serializa
 
 void Wheeler::SerializeIntoJsonObj(nlohmann::json& j_wheeler)
 {
+   // Runs on the SKSE serialization thread while a client may be creating or
+   // deleting managed wheels, so the vector has to be pinned for the walk.
+   std::shared_lock<std::shared_mutex> lock(_wheelDataLock);
    j_wheeler["wheels"] = nlohmann::json::array();
    int32_t savedWheelCount = 0;
    int32_t adjustedActiveIdx = _activeWheelIdx;
@@ -892,6 +1063,7 @@ void Wheeler::SetupDefaultWheels()
    const int defaultWheelNum = 2;
    const int defaultEntryNum = 4;
 
+   DeferredNotifications defer;  // declared first so it unwinds after `lock`
    std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    clearUnmanagedLocked();
 
@@ -961,7 +1133,7 @@ void Wheeler::enterEditMode()
       return;
    }
    _editMode = true;
-   WheelerAPI::NotifyEditModeChanged(true, nullptr, 0);
+   notifyEditModeChanged(true);
 }
 
 void Wheeler::exitEditMode()
@@ -971,7 +1143,7 @@ void Wheeler::exitEditMode()
    }
    _editMode = false;
    // TODO: Track changes during edit mode and pass them here
-   WheelerAPI::NotifyEditModeChanged(false, nullptr, 0);
+   notifyEditModeChanged(false);
 }
 
 float Wheeler::getCursorRadiusMax()
