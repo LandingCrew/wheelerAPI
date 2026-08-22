@@ -20,9 +20,15 @@
 //
 // IMPORTANT: Callbacks should execute quickly to avoid blocking the render loop.
 // If you need to do heavy processing, queue work to another thread.
+//
+// Calling back into this API from a callback is safe: Wheeler never invokes one
+// while holding its wheel-data lock. Wheel indices may have changed by the time a
+// callback runs, though, so re-resolve them with GetManagedWheelsForClient()
+// rather than caching them across edit-mode exits and save loads.
 
 #include <cstddef>  // size_t
 #include <cstdint>
+#include <string>  // GetManagedWheelClientNameSafe, ManagedWheelStyling::indicatorText
 
 #ifndef WHEELER_API
 #   ifdef WHEELER_EXPORTS
