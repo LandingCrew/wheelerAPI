@@ -35,6 +35,11 @@ namespace
       };
 
       Kind kind;
+      // Resolved while the lock is still held: NotifyItemActivated used to look it
+      // up itself, through Wheeler::GetWheelByIndex, which reads _wheels unlocked.
+      // By the time the queue drains the lock is gone and a client thread may have
+      // erased that wheel.
+      std::string clientName;
       int32_t wheelIndex = -1;
       int32_t entryIndex = -1;
       int32_t itemIndex = -1;
@@ -60,6 +65,11 @@ Wheeler::DeferredNotifications::~DeferredNotifications()
    // notifications, which must not reallocate the vector being iterated here.
    std::vector<PendingNotification> pending;
    pending.swap(g_pendingNotifications);
+
+   // A destructor is implicitly noexcept, and these invoke function pointers from
+   // other plugins. Letting one throw through here would call std::terminate and
+   // take the game down with no unwind.
+   try {
    for (const PendingNotification& notification : pending) {
       switch (notification.kind) {
       case PendingNotification::Kind::KWheelState:
@@ -70,9 +80,15 @@ Wheeler::DeferredNotifications::~DeferredNotifications()
          break;
       case PendingNotification::Kind::KItemActivated:
          WheelerAPI::NotifyItemActivated(notification.wheelIndex, notification.entryIndex,
-            notification.itemIndex, notification.formID, notification.flag);
+            notification.itemIndex, notification.formID, notification.flag,
+            notification.clientName);
          break;
       }
+   }
+   } catch (const std::exception& e) {
+      logger::error("Exception dispatching a deferred notification: {}", e.what());
+   } catch (...) {
+      logger::error("Unknown exception dispatching a deferred notification");
    }
 }
 
@@ -103,6 +119,7 @@ void Wheeler::notifyItemActivated(int32_t a_wheelIndex, int32_t a_entryIndex, in
 {
    if (g_deferDepth > 0) {
       PendingNotification notification{ PendingNotification::Kind::KItemActivated };
+      notification.clientName = WheelerAPI::GetManagedWheelClientNameSafe(a_wheelIndex);
       notification.wheelIndex = a_wheelIndex;
       notification.entryIndex = a_entryIndex;
       notification.itemIndex = a_itemIndex;
@@ -111,7 +128,8 @@ void Wheeler::notifyItemActivated(int32_t a_wheelIndex, int32_t a_entryIndex, in
       g_pendingNotifications.push_back(notification);
       return;
    }
-   WheelerAPI::NotifyItemActivated(a_wheelIndex, a_entryIndex, a_itemIndex, a_formID, a_isPrimary);
+   WheelerAPI::NotifyItemActivated(a_wheelIndex, a_entryIndex, a_itemIndex, a_formID, a_isPrimary,
+      WheelerAPI::GetManagedWheelClientNameSafe(a_wheelIndex));
 }
 
 void Wheeler::Update(float a_deltaTime)
@@ -128,9 +146,8 @@ void Wheeler::Update(float a_deltaTime)
       return;
    }
 
-   if (_closeRequested) {  // an activated item asked for the wheel to shut
-      _closeRequested = false;
-      tryCloseWheelerLocked();
+   if (_closeRequested.exchange(false, std::memory_order_relaxed)) {
+      tryCloseWheelerLocked();  // an activated item asked for the wheel to shut
    }
 
    if (_state == WheelState::KClosed) {                  // should close
@@ -394,7 +411,7 @@ void Wheeler::TryOpenWheeler()
 void Wheeler::TryCloseWheeler()
 {
    DeferredNotifications defer;  // declared first so it unwinds after `lock`
-   std::shared_lock<std::shared_mutex> lock(_wheelDataLock);
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    tryCloseWheelerLocked();
 }
 
@@ -403,7 +420,7 @@ void Wheeler::RequestClose()
    // Item activation runs with the wheel-data lock held, so an item that wants the
    // wheel shut cannot call TryCloseWheeler() — that would re-lock a non-recursive
    // mutex on the same thread. Raise a flag instead; Update() acts on it next frame.
-   _closeRequested = true;
+   _closeRequested.store(true, std::memory_order_relaxed);
 }
 
 void Wheeler::tryCloseWheelerLocked()
@@ -428,7 +445,7 @@ void Wheeler::tryCloseWheelerLocked()
 void Wheeler::OpenWheeler()
 {
    DeferredNotifications defer;  // declared first so it unwinds after `lock`
-   std::shared_lock<std::shared_mutex> lock(_wheelDataLock);
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    if (!RE::PlayerCharacter::GetSingleton() || !RE::PlayerCharacter::GetSingleton()->Is3DLoaded()) {
       return;
    }
@@ -504,7 +521,7 @@ void Wheeler::OpenWheeler()
 void Wheeler::CloseWheeler()
 {
    DeferredNotifications defer;  // declared first so it unwinds after `lock`
-   std::shared_lock<std::shared_mutex> lock(_wheelDataLock);
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    closeWheelerLocked();
 }
 
@@ -540,7 +557,7 @@ void Wheeler::closeWheelerLocked()
 
 void Wheeler::UpdateCursorPosMouse(float a_deltaX, float a_deltaY)
 {
-   std::shared_lock<std::shared_mutex> lock(_wheelDataLock);
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    if (_state == WheelState::KClosed) {
       return;
    }
@@ -563,7 +580,7 @@ void Wheeler::UpdateCursorPosMouse(float a_deltaX, float a_deltaY)
 
 void Wheeler::UpdateCursorPosGamepad(float a_x, float a_y)
 {
-   std::shared_lock<std::shared_mutex> lock(_wheelDataLock);
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    if (_state == WheelState::KClosed) {
       return;
    }
@@ -676,7 +693,10 @@ void Wheeler::PrevWheel()
 
 void Wheeler::PrevItemInEntry()
 {
-   std::shared_lock<std::shared_mutex> lock(_wheelDataLock);
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
+   if (_wheels.empty()) {
+      return;
+   }
    if (_state == WheelState::KOpened) {
       _wheels[_activeWheelIdx]->PrevItemInHoveredEntry();
    }
@@ -684,7 +704,10 @@ void Wheeler::PrevItemInEntry()
 
 void Wheeler::NextItemInEntry()
 {
-   std::shared_lock<std::shared_mutex> lock(_wheelDataLock);
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
+   if (_wheels.empty()) {
+      return;
+   }
    if (_state == WheelState::KOpened) {
       _wheels[_activeWheelIdx]->NextItemInHoveredEntry();
    }
@@ -763,7 +786,7 @@ void Wheeler::ActivateHoveredEntrySecondary()
 void Wheeler::ActivateHoveredEntryPrimary()
 {
    DeferredNotifications defer;  // declared first so it unwinds after `lock`
-   std::shared_lock<std::shared_mutex> lock(_wheelDataLock);
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    if (_wheels.empty()) {
       return;
    }
@@ -806,7 +829,7 @@ void Wheeler::ActivateHoveredEntryPrimary()
 
 void Wheeler::ActivateHoveredEntrySpecial()
 {
-   std::shared_lock<std::shared_mutex> lock(_wheelDataLock);
+   std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    if (_wheels.empty()) {
       return;
    }

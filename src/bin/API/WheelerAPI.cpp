@@ -48,14 +48,15 @@ namespace WheelerAPI
       }
    }
 
-   // Called by Wheeler when item is activated
-   void NotifyItemActivated(int32_t wheelIndex, int32_t entryIndex, int32_t itemIndex, uint32_t formID, bool isPrimary)
+   // Called by Wheeler when item is activated. clientName is resolved by the caller
+   // while it still holds the wheel-data lock; looking it up here would read _wheels
+   // unlocked, since notifications are dispatched after the lock is released.
+   void NotifyItemActivated(int32_t wheelIndex, int32_t entryIndex, int32_t itemIndex, uint32_t formID, bool isPrimary,
+      const std::string& clientName)
    {
-      // Log if this is a managed wheel
-      std::string clientNameCopy = GetManagedWheelClientNameSafe(wheelIndex);
-      if (!clientNameCopy.empty()) {
+      if (!clientName.empty()) {
       INFO("WheelerAPI: Item activated on managed wheel {} (client: {}), entry={}, item={}, formID={:08X}, primary={}",
-        wheelIndex, clientNameCopy, entryIndex, itemIndex, formID, isPrimary);
+        wheelIndex, clientName, entryIndex, itemIndex, formID, isPrimary);
       }
 
       // Copy callback under lock, then invoke outside lock to avoid deadlock
@@ -682,7 +683,12 @@ namespace WheelerAPI
 
       // The caption is stored on the entry itself, so it follows that entry through
       // any later reindexing instead of being stranded on a (wheel, entry) position.
-      std::unique_lock lock(Wheeler::GetWheelDataLock());
+      //
+      // Shared is enough: nothing in _wheels is modified here, and the write itself
+      // is serialized by the entry's own lock. Taking it exclusively would queue a
+      // writer on every call and stall the render thread, and clients set captions
+      // hundreds of times a session.
+      std::shared_lock lock(Wheeler::GetWheelDataLock());
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
       return Result::InvalidWheelIndex;

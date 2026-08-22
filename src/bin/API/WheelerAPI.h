@@ -249,7 +249,10 @@ namespace WheelerAPI
    void SetInitialized(bool initialized);
 
    // Notification functions - called by Wheeler to notify registered callbacks
-   void NotifyItemActivated(int32_t wheelIndex, int32_t entryIndex, int32_t itemIndex, uint32_t formID, bool isPrimary);
+   // clientName is resolved by the caller while it holds the wheel-data lock;
+   // notifications dispatch after that lock is released, so this cannot look it up.
+   void NotifyItemActivated(int32_t wheelIndex, int32_t entryIndex, int32_t itemIndex, uint32_t formID, bool isPrimary,
+      const std::string& clientName);
    void NotifyEditModeChanged(bool entered, const WheelChange* changes, size_t changeCount);
    void NotifyWheelStateChanged(int32_t wheelIndex, bool isOpen);
 
