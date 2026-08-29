@@ -322,6 +322,45 @@ During edit mode:
 - API calls to managed wheels: **allowed** (client can still update)
 - API calls to user wheels: return `Result::InEditMode`
 
+### Deleting Managed Wheels (v3+)
+
+`DeleteManagedWheel(wheelIndex)` refuses to remove Wheeler's last remaining wheel
+and reports that honestly, as `Result::LastWheel`.
+
+`DeleteManagedWheelsForClient(clientName)` must **not** carry that guard. It
+returns a count, not a `Result`, so a refusal has nowhere to go: the original
+implementation broke out of its erase loop once `_wheels.size() <= 1` and still
+returned a plain count, which meant a client that owned every wheel present was
+handed `0` while one of its wheels was still live — indistinguishable from
+owning none. Clients treat that as "teardown succeeded" and recreate, ending up
+with duplicates under one name.
+
+The contract is therefore: **every match is erased, and the return equals the
+number that matched.** A caller reading `N >= 0` can rely on no wheel for that
+client surviving.
+
+Wheeler's list must still not be left empty. The draw path handles it (it renders
+the `NoWheelPresent` text) and most input paths guard on `_wheels.empty()`, but
+`MoveEntryForwardInCurrentWheel` / `MoveEntryBackInCurrentWheel` — both bound to
+edit-mode inputs in `Controls.cpp` — index `_wheels[_activeWheelIdx]` behind only
+an `_activeWheelIdx != -1` test, and nothing in Wheeler ever sets that index to
+`-1`. An empty vector is an out-of-bounds read there.
+
+So when erasing the matches would empty the list, push one empty **unmanaged**
+wheel (the same wheel `Wheeler::AddWheel` creates) and settle the active index
+onto it:
+
+```cpp
+if (wheels.empty() && !toDelete.empty()) {
+    wheels.push_back(std::make_unique<Wheel>());
+    activeIdx = 0;
+    activeWasErased = false;  // a freshly built wheel has no hover state to clear
+}
+```
+
+The placeholder carries no managed info, so it is invisible to
+`GetManagedWheelsForClient()` and is saved to the co-save like any user wheel.
+
 ### Index Adjustment
 
 When wheels are inserted or removed, managed wheel indices and subtext must be adjusted:

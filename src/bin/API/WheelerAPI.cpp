@@ -313,8 +313,24 @@ namespace WheelerAPI
    // Delete every managed wheel owned by a client in one shift-safe pass. Callers
    // that track their own wheels by index (e.g. Huginn) can't safely delete them
    // one-by-one, because each erase shifts the remaining indices; this removes them
-   // all at once, high-to-low, so no stale index is ever dereferenced. Returns the
-   // number of wheels deleted (>= 0), or a negative Result on error.
+   // all at once, high-to-low, so no stale index is ever dereferenced.
+   //
+   // EVERY match is removed, the last wheel in the list included, so the count
+   // returned is exactly the number that matched and a caller can read it as "no
+   // wheel under this name survives". The older last-wheel guard broke out of the
+   // loop on the TOTAL wheel count and still returned a plain count, so a client
+   // whose wheels were the only ones left was told "deleted 0" while one of its
+   // wheels was still there — indistinguishable from having had none.
+   //
+   // Emptying _wheels outright is not safe, though: Wheeler::MoveEntryForwardInCurrentWheel
+   // and MoveEntryBackInCurrentWheel (bound to edit-mode inputs in Controls.cpp)
+   // index _wheels[_activeWheelIdx] behind an `_activeWheelIdx != -1` test that
+   // never fires, because nothing ever sets the index to -1. So when the last wheel
+   // would go, an empty unmanaged wheel is left in its place — the same wheel
+   // Wheeler::AddWheel creates. It belongs to no client, so it does not show up in
+   // GetManagedWheelsForClient() and the client's wheels are still all gone.
+   //
+   // Returns the number of wheels deleted (>= 0), or a negative Result on error.
    static int32_t API_DeleteManagedWheelsForClient(const char* clientName)
    {
       if (!s_initialized) {
@@ -337,19 +353,14 @@ namespace WheelerAPI
       }
       }
 
-      // Never remove the last remaining wheel (Wheeler must keep >= 1).
-      // Track the active index as we go rather than afterwards: the loop can stop
-      // early on that guard, so only the slots actually erased may shift it.
+      // Track the active index as we go rather than afterwards: erasing a slot
+      // below it shifts it down, and erasing the slot it names leaves it pointing
+      // at whichever wheel slid into place.
       int activeIdx = Wheeler::GetActiveWheelIndex();
       bool activeWasErased = false;
-      int32_t deleted = 0;
       for (auto it = toDelete.rbegin(); it != toDelete.rend(); ++it) {
-      if (wheels.size() <= 1) {
-        break;
-      }
       wheels.erase(wheels.begin() + *it);
       s_managedWheelCount.fetch_sub(1, std::memory_order_relaxed);
-      ++deleted;
       if (*it < activeIdx) {
         --activeIdx;
       } else if (*it == activeIdx) {
@@ -357,8 +368,17 @@ namespace WheelerAPI
       }
       }
 
+      // Keep Wheeler's vector non-empty without keeping any of the client's wheels.
+      if (wheels.empty() && !toDelete.empty()) {
+      wheels.push_back(std::make_unique<Wheel>());
+      activeIdx = 0;
+      activeWasErased = false;  // a freshly built wheel has no hover state to clear
+      }
+
       SettleActiveWheelLocked(activeIdx, activeWasErased);
 
+      // Every match was erased, so this is the match count, not a partial tally.
+      const int32_t deleted = static_cast<int32_t>(toDelete.size());
       DEBUG("WheelerAPI: Deleted {} managed wheel(s) for client '{}'", deleted, clientName);
       return deleted;
    }
@@ -413,6 +433,10 @@ namespace WheelerAPI
 
    static int32_t API_GetActiveWheelIndex()
    {
+      // Pairs with the exclusive hold in API_SetActiveWheelIndex below. Reading
+      // _activeWheelIdx unlocked races every writer of it — the API setter, the
+      // input thread's NextWheel/PrevWheel, and the erase paths that settle it.
+      std::shared_lock lock(Wheeler::GetWheelDataLock());
       return Wheeler::GetActiveWheelIndex();
    }
 
@@ -422,7 +446,13 @@ namespace WheelerAPI
       return Result::NotInitialized;
       }
 
-      std::shared_lock lock(Wheeler::GetWheelDataLock());
+      // Exclusive, not shared. Wheeler::SetActiveWheelIndex writes a plain int, and
+      // shared holders do not exclude one another, so a shared lock let two clients
+      // write it concurrently while Wheeler::Update read it under its own shared
+      // hold. It also has to cover the bounds check: under a shared lock another
+      // thread could erase a wheel between GetWheelCount() and the write, leaving
+      // the index past the end of the list.
+      std::unique_lock lock(Wheeler::GetWheelDataLock());
       if (index < 0 || index >= Wheeler::GetWheelCount()) {
       return Result::InvalidWheelIndex;
       }

@@ -188,6 +188,17 @@ namespace WheelerAPI
         // Delete ALL managed wheels owned by the given client in one shift-safe pass.
         // Prefer over looping DeleteManagedWheel() with stored indices (which go stale
         // as each delete shifts the rest). Only valid when version >= 3.
+        //
+        // POST-CONDITION: on a non-negative return, NO wheel for clientName remains.
+        // Every match is deleted, including one that is the only wheel Wheeler has
+        // left, and the value returned is exactly the number that matched — never a
+        // partial tally. This call never leaves Wheeler's wheel list empty: if your
+        // wheels were the only ones in it, an empty UNMANAGED wheel is left in their
+        // place. That wheel is not yours and will not appear in
+        // GetManagedWheelsForClient().
+        //
+        // Unlike DeleteManagedWheel(), this never returns Result::LastWheel.
+        //
         // @return number of wheels deleted (>= 0), or a negative Result on error
         int32_t (*DeleteManagedWheelsForClient)(const char* clientName);
 
