@@ -907,7 +907,11 @@ void Wheeler::MoveEntryForwardInCurrentWheel()
    if (WheelerAPI::IsManagedWheelIndex(static_cast<int32_t>(_activeWheelIdx))) {
       return;
    }
-   if (_activeWheelIdx != -1) {
+   // Bounds-check, don't just reject -1: _activeWheelIdx is never actually set to
+   // -1 anywhere (it defaults to 0, clearUnmanagedLocked resets it to 0, and
+   // SettleActiveWheelLocked leaves it alone on an empty list), so the old test
+   // never fired and an empty _wheels read out of bounds here.
+   if (_activeWheelIdx >= 0 && _activeWheelIdx < static_cast<int>(_wheels.size())) {
       _wheels[_activeWheelIdx]->MoveHoveredEntryForward();
    }
 }
@@ -922,7 +926,9 @@ void Wheeler::MoveEntryBackInCurrentWheel()
    if (WheelerAPI::IsManagedWheelIndex(static_cast<int32_t>(_activeWheelIdx))) {
       return;
    }
-   if (_activeWheelIdx != -1) {
+   // Same as MoveEntryForwardInCurrentWheel: bounds-check rather than test for a
+   // -1 sentinel that is never assigned.
+   if (_activeWheelIdx >= 0 && _activeWheelIdx < static_cast<int>(_wheels.size())) {
       _wheels[_activeWheelIdx]->MoveHoveredEntryBack();
    }
 }
