@@ -152,7 +152,12 @@ namespace WheelerAPI
         /// Set subtext displayed below an entry's item name (managed wheels only)
         Result (*SetManagedWheelEntrySubtext)(int32_t wheelIndex, int32_t entryIndex, const SubtextConfig* config);
 
-        // v3: delete all managed wheels for a client in one shift-safe pass (version >= 3)
+        // v3: delete all managed wheels for a client in one shift-safe pass (version >= 3).
+        // On a non-negative return, NO wheel for clientName remains: every match is
+        // deleted (including one that is Wheeler's only remaining wheel) and the
+        // return is exactly the match count, never a partial tally. Never returns
+        // Result::LastWheel. Deleting Wheeler's last wheel leaves an empty UNMANAGED
+        // wheel behind, which is not yours and never appears in the lookup below.
         int32_t (*DeleteManagedWheelsForClient)(const char* clientName);
 
         // v4: look up the wheel indices currently managed for a client (version >= 4).

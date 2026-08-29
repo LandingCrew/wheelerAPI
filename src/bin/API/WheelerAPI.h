@@ -50,6 +50,16 @@ namespace WheelerAPI
    //     BEHAVIOUR CHANGE: Wheeler no longer implicitly drops a client's wheels on
    //     save load, so a client that recreates its wheels every load MUST call
    //     DeleteManagedWheelsForClient() first or it will accumulate duplicates.
+   //
+   // Behaviour fix inside v3/v4, deliberately NOT a version bump: the signature and
+   // the ABI are unchanged and no client needs to recompile.
+   //     DeleteManagedWheelsForClient() no longer refuses a client's last wheel. It
+   //     used to break out of its erase loop on Wheeler's TOTAL wheel count and
+   //     still return a plain count, so a client whose wheels were the only ones
+   //     left was handed 0 with one of its own wheels still live — the same answer
+   //     it would get for owning none. It now removes every match, leaving an empty
+   //     UNMANAGED wheel behind if that would otherwise empty Wheeler's list, so a
+   //     non-negative return means no wheel for that client survives.
    constexpr uint32_t API_VERSION = 4;
 
    // ============================================================================
@@ -218,6 +228,16 @@ namespace WheelerAPI
       // Prefer this over looping DeleteManagedWheel() with stored indices: each
       // single delete shifts the remaining indices, so a caller's stored indices go
       // stale mid-loop and wheels get orphaned. This removes them all at once.
+      //
+      // POST-CONDITION: on a non-negative return, NO wheel for clientName remains.
+      // Every match is deleted, including one that is the only wheel Wheeler has
+      // left, and the value returned is exactly the number that matched — never a
+      // partial tally. Wheeler keeps at least one wheel in its list, so deleting
+      // the last one leaves an empty UNMANAGED wheel in its place; that wheel is
+      // not yours and will not appear in GetManagedWheelsForClient().
+      //
+      // Unlike DeleteManagedWheel(), this never returns Result::LastWheel.
+      //
       // @param clientName The client name passed in WheelConfig::clientName
       // @return number of wheels deleted (>= 0), or a negative Result on error
       int32_t (*DeleteManagedWheelsForClient)(const char* clientName);

@@ -19,6 +19,22 @@ Clients access Wheeler's functionality through a single exported function that r
 g_wheelerAPI->DeleteManagedWheelsForClient("MyMod");
 ```
 
+A non-negative return is a guarantee, not a tally of what Wheeler felt like
+removing: **when the call returns `N >= 0`, no wheel under your client name is
+left**, and `N` is exactly how many matched. You do not have to re-check with
+`GetManagedWheelsForClient()` before recreating, and a `0` unambiguously means
+you owned none — it is never Wheeler quietly declining to remove one.
+
+This holds even when your wheels are the only wheels Wheeler has. Wheeler keeps
+at least one wheel in its list, so if deleting yours would empty it, it leaves an
+empty **unmanaged** wheel behind. That wheel is not yours: it never appears in
+`GetManagedWheelsForClient()`, and you should neither track nor delete it.
+
+> Earlier builds stopped short here. The batch delete used to break off once
+> Wheeler was down to one wheel and still return a plain count, so a client that
+> owned every wheel present got `0` back with one of its own wheels still live —
+> and recreating on top of that left duplicates under one name.
+
 **New: `GetManagedWheelsForClient()`** — the read counterpart to the label-keyed delete. A stored wheel index is only valid until the next wheel insert or removal; your client name is the one key that stays stable. When `IsManagedWheel()` says a stored index is no longer yours, re-derive it instead of giving up:
 
 ```cpp
@@ -52,7 +68,7 @@ Indices come back in ascending order and are only valid until the next wheel ins
 
 ## What's New in v3
 
-- **`DeleteManagedWheelsForClient(clientName)`** - delete all of your wheels in one shift-safe pass. Prefer this over looping `DeleteManagedWheel()` with stored indices: each single delete shifts the remaining indices, so stored indices go stale mid-loop and wheels get orphaned.
+- **`DeleteManagedWheelsForClient(clientName)`** - delete all of your wheels in one shift-safe pass. Prefer this over looping `DeleteManagedWheel()` with stored indices: each single delete shifts the remaining indices, so stored indices go stale mid-loop and wheels get orphaned. On a non-negative return no wheel of yours remains, and the return is exactly the number that matched; unlike `DeleteManagedWheel()`, it never returns `Result::LastWheel`. See [What's New in v4](#whats-new-in-v4) for the guarantee in full.
 - Managed wheel metadata moved onto the wheel itself, so it can no longer desync from the wheel's position when the list is reindexed.
 
 ## What's New in v2
