@@ -413,6 +413,10 @@ namespace WheelerAPI
 
    static int32_t API_GetActiveWheelIndex()
    {
+      // Pairs with the exclusive hold in API_SetActiveWheelIndex below. Reading
+      // _activeWheelIdx unlocked races every writer of it — the API setter, the
+      // input thread's NextWheel/PrevWheel, and the erase paths that settle it.
+      std::shared_lock lock(Wheeler::GetWheelDataLock());
       return Wheeler::GetActiveWheelIndex();
    }
 
@@ -422,7 +426,13 @@ namespace WheelerAPI
       return Result::NotInitialized;
       }
 
-      std::shared_lock lock(Wheeler::GetWheelDataLock());
+      // Exclusive, not shared. Wheeler::SetActiveWheelIndex writes a plain int, and
+      // shared holders do not exclude one another, so a shared lock let two clients
+      // write it concurrently while Wheeler::Update read it under its own shared
+      // hold. It also has to cover the bounds check: under a shared lock another
+      // thread could erase a wheel between GetWheelCount() and the write, leaving
+      // the index past the end of the list.
+      std::unique_lock lock(Wheeler::GetWheelDataLock());
       if (index < 0 || index >= Wheeler::GetWheelCount()) {
       return Result::InvalidWheelIndex;
       }
