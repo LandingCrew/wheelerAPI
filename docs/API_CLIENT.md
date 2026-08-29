@@ -25,9 +25,9 @@ left**, and `N` is exactly how many matched. You do not have to re-check with
 `GetManagedWheelsForClient()` before recreating, and a `0` unambiguously means
 you owned none — it is never Wheeler quietly declining to remove one.
 
-This holds even when your wheels are the only wheels Wheeler has. Wheeler keeps
-at least one wheel in its list, so if deleting yours would empty it, it leaves an
-empty **unmanaged** wheel behind. That wheel is not yours: it never appears in
+This holds even when your wheels are the only wheels Wheeler has. The call never
+leaves Wheeler's wheel list empty, so if deleting yours would empty it, it leaves
+an empty **unmanaged** wheel behind. That wheel is not yours: it never appears in
 `GetManagedWheelsForClient()`, and you should neither track nor delete it.
 
 > Earlier builds stopped short here. The batch delete used to break off once

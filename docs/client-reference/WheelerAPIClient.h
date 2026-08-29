@@ -192,9 +192,10 @@ namespace WheelerAPI
         // POST-CONDITION: on a non-negative return, NO wheel for clientName remains.
         // Every match is deleted, including one that is the only wheel Wheeler has
         // left, and the value returned is exactly the number that matched — never a
-        // partial tally. Wheeler keeps at least one wheel in its list, so deleting
-        // the last one leaves an empty UNMANAGED wheel in its place; that wheel is
-        // not yours and will not appear in GetManagedWheelsForClient().
+        // partial tally. This call never leaves Wheeler's wheel list empty: if your
+        // wheels were the only ones in it, an empty UNMANAGED wheel is left in their
+        // place. That wheel is not yours and will not appear in
+        // GetManagedWheelsForClient().
         //
         // Unlike DeleteManagedWheel(), this never returns Result::LastWheel.
         //
