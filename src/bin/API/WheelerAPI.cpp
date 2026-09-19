@@ -552,6 +552,7 @@ namespace WheelerAPI
       // Validate form exists
       RE::TESForm* form = RE::TESForm::LookupByID(formID);
       if (!form) {
+      logger::debug("WheelerAPI: AddItemByFormID({:08X}, uid={}) rejected - FormNotFound", formID, uniqueID);
       return static_cast<int32_t>(Result::FormNotFound);
       }
 
@@ -562,12 +563,15 @@ namespace WheelerAPI
       // it here with a code that names the actual problem. The form type is fine.
       const RE::FormType formType = form->GetFormType();
       if ((formType == RE::FormType::Weapon || formType == RE::FormType::Armor) && uniqueID == 0) {
+      logger::debug("WheelerAPI: AddItemByFormID({:08X}) rejected - MissingUniqueID (weapon/armour needs an instance)", formID);
       return static_cast<int32_t>(Result::MissingUniqueID);
       }
 
       // Create the wheel item
       std::shared_ptr<WheelItem> item = WheelItemFactory::MakeWheelItemFromFormID(formID, uniqueID);
       if (!item) {
+      logger::debug("WheelerAPI: AddItemByFormID({:08X}, uid={}) rejected - UnsupportedFormType (formType={})",
+        formID, uniqueID, static_cast<int>(formType));
       return static_cast<int32_t>(Result::UnsupportedFormType);
       }
 
@@ -581,6 +585,8 @@ namespace WheelerAPI
       return static_cast<int32_t>(Result::InvalidEntryIndex);
       }
 
+      logger::debug("WheelerAPI: AddItemByFormID({:08X}, uid={}) accepted onto wheel {} entry {}",
+      formID, uniqueID, wheelIndex, entryIndex);
       entry->PushItem(item);
       return entry->GetNumItems() - 1;  // Return index of newly added item
    }
