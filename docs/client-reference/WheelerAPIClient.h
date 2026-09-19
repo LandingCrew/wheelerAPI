@@ -1,19 +1,27 @@
 // =============================================================================
-// Wheeler API Client Reference Implementation (v2)
+// Wheeler API Client Reference Implementation (v5)
 // =============================================================================
 //
 // This is a complete, copy-paste-ready client implementation for integrating
 // with Wheeler's external API. Drop this file into your SKSE plugin project.
 //
 // Requirements:
-// - Wheeler.dll with API v2 support
+// - Wheeler.dll with API v2 support (v5 recommended, see uniqueID note below)
 // - Windows.h for GetModuleHandle/GetProcAddress
+// - CommonLibSSE, to resolve uniqueIDs for weapons and armour. Optional: without
+//   it this header still compiles, but it cannot add weapons or armour.
 //
 // Usage:
 //   1. Copy this file to your project
 //   2. Call WheelerClient::TryConnect() after SKSE loads (kPostLoad or kDataLoaded)
 //   3. Call WheelerClient::CreateWheel() after game load (kPostLoadGame)
 //   4. Call WheelerClient::UpdateItems() whenever your recommendations change
+//
+// IMPORTANT - weapons and armour need a uniqueID:
+//   Earlier revisions of this file called AddItemByFormID(..., 0) for every item.
+//   That is wrong for weapons and armour, which Wheeler tracks by instance rather
+//   than by form, and it fails with a misleading error. See ResolveUniqueID()
+//   below; UpdateItems() now does this for you.
 //
 // v2 Features:
 //   - Custom indicator text (e.g., "O" instead of "M")
@@ -23,6 +31,15 @@
 // =============================================================================
 
 #pragma once
+
+// CommonLibSSE has to come before <Windows.h>: it supplies its own Win32 shims and
+// including Windows.h first makes them collide. Optional - it is needed only to
+// resolve uniqueIDs for weapons and armour (see ResolveUniqueID below); without it
+// this header still compiles and every other item type still works.
+#if __has_include(<RE/Skyrim.h>)
+#   include <RE/Skyrim.h>
+#   define WHEELER_CLIENT_HAS_COMMONLIB 1
+#endif
 
 #include <Windows.h>
 #include <cstdint>
@@ -34,7 +51,7 @@ namespace WheelerAPI
     // =========================================================================
     // API Version - Clients should check this matches or exceeds their needs
     // =========================================================================
-    constexpr uint32_t API_VERSION = 4;
+    constexpr uint32_t API_VERSION = 5;
 
     // =========================================================================
     // Result Codes
@@ -54,6 +71,7 @@ namespace WheelerAPI
         NotManagedWheel = -10,
         InEditMode = -11,
         EntryNotEmpty = -12,
+        MissingUniqueID = -13,   // v5: weapon/armour needs a non-zero uniqueID
         InternalError = -100
     };
 
@@ -217,6 +235,140 @@ namespace WheelerAPI
 
 
 // =============================================================================
+// Instance identity for weapons and armour
+// =============================================================================
+//
+// Wheeler stores a weapon or a piece of armour by INSTANCE, not by form. It has
+// to know WHICH iron sword you mean in order to equip it, count the stack and
+// show it as currently equipped, and that identity is the uniqueID carried on
+// the item's ExtraDataList.
+//
+// So AddItemByFormID(wheel, entry, formID, 0) cannot work for a Weapon or an
+// Armor. Wheeler v5+ rejects it with Result::MissingUniqueID. Older builds
+// report UnsupportedFormType instead, which is misleading - the form type was
+// never the problem.
+//
+// Every other supported type ignores the parameter entirely - spells, shouts,
+// ammo, potions, scrolls, misc items, soul gems and carryable lights - so 0 is
+// the correct value for those.
+//
+// Wheeler stamps a uniqueID onto every weapon and armour in the player's
+// inventory, so for a carried item there is normally one to read. An item the
+// player is not carrying has no instance, and cannot go on a wheel at all.
+// =============================================================================
+
+namespace WheelerAPI
+{
+#ifdef WHEELER_CLIENT_HAS_COMMONLIB
+    /// Resolve uniqueIDs for several forms in ONE pass over the inventory.
+    ///
+    /// Prefer this to calling ResolveUniqueID() per slot: a wheel update runs on a
+    /// timer, and one inventory walk per slot turns an 8-slot wheel over a large
+    /// inventory into thousands of entry visits every tick.
+    ///
+    /// @param formIDs forms to look up, in slot order. 0 entries are skipped.
+    /// @param out     resized to formIDs.size(); out[i] is the uniqueID for
+    ///                formIDs[i], or 0 where none applies - not carried, or a type
+    ///                that ignores the parameter, where 0 is the right value anyway.
+    inline void ResolveUniqueIDs(const std::vector<uint32_t>& formIDs, std::vector<uint16_t>& out)
+    {
+        out.assign(formIDs.size(), static_cast<uint16_t>(0));
+
+        auto* pc = RE::PlayerCharacter::GetSingleton();
+        if (!pc) {
+            return;
+        }
+
+        // Narrow to the forms that actually need an instance before touching the
+        // inventory, so a wheel of spells costs nothing.
+        std::vector<size_t> wanted;
+        for (size_t i = 0; i < formIDs.size(); ++i) {
+            if (formIDs[i] == 0) {
+                continue;
+            }
+            auto* form = RE::TESForm::LookupByID(static_cast<RE::FormID>(formIDs[i]));
+            if (!form) {
+                continue;
+            }
+            const auto formType = form->GetFormType();
+            if (formType == RE::FormType::Weapon || formType == RE::FormType::Armor) {
+                wanted.push_back(i);
+            }
+        }
+        if (wanted.empty()) {
+            return;
+        }
+
+        auto* invChanges = pc->GetInventoryChanges();
+        if (!invChanges || !invChanges->entryList) {
+            return;
+        }
+
+        for (auto& entry : *invChanges->entryList) {
+            if (!entry || !entry->object || !entry->extraLists) {
+                continue;
+            }
+            // An entry can linger with a non-positive count after the last copy was
+            // dropped or sold, still carrying its old extraLists. Reading a uniqueID
+            // off one of those resolves an item the player no longer has: the add
+            // succeeds, Wheeler drops it on the next draw, and the slot goes quietly
+            // empty - the exact failure this function exists to prevent.
+            if (entry->countDelta <= 0) {
+                continue;
+            }
+
+            const uint32_t entryFormID = entry->object->GetFormID();
+            for (size_t i : wanted) {
+                if (out[i] != 0 || formIDs[i] != entryFormID) {
+                    continue;
+                }
+                for (auto* xList : *entry->extraLists) {
+                    if (!xList) {
+                        continue;
+                    }
+                    if (auto* xID = xList->GetByType<RE::ExtraUniqueID>()) {
+                        if (xID->uniqueID != 0) {
+                            out[i] = xID->uniqueID;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Find the uniqueID of a weapon/armour instance the player is carrying.
+    ///
+    /// Pass the result straight to AddItemByFormID(). If the player carries more
+    /// than one instance of the form - say a tempered iron sword and a plain one -
+    /// this returns the first with a uniqueID; pick the instance yourself if the
+    /// distinction matters to you.
+    ///
+    /// Resolving several forms at once? Use ResolveUniqueIDs(), which walks the
+    /// inventory once instead of once per form.
+    ///
+    /// @return the uniqueID, or 0 if the player carries no instance of this form.
+    ///         0 is also returned for types that do not need one, where it is the
+    ///         value AddItemByFormID() wants anyway.
+    inline uint16_t ResolveUniqueID(uint32_t formID)
+    {
+        std::vector<uint16_t> out;
+        ResolveUniqueIDs(std::vector<uint32_t>{ formID }, out);
+        return out.empty() ? static_cast<uint16_t>(0) : out[0];
+    }
+#else
+    /// CommonLibSSE is not available, so uniqueIDs cannot be resolved and weapons
+    /// and armour cannot be added. Everything else works.
+    inline void ResolveUniqueIDs(const std::vector<uint32_t>& formIDs, std::vector<uint16_t>& out)
+    {
+        out.assign(formIDs.size(), static_cast<uint16_t>(0));
+    }
+    inline uint16_t ResolveUniqueID(uint32_t) { return 0; }
+#endif
+}  // namespace WheelerAPI
+
+
+// =============================================================================
 // Reference Client Implementation
 // =============================================================================
 //
@@ -302,6 +454,10 @@ public:
     /// Check if v4 features are available (GetManagedWheelsForClient)
     bool HasV4Features() const { return m_api && m_api->version >= 4; }
 
+    /// Check if v5 features are available (Result::MissingUniqueID is reported
+    /// distinctly; on older builds the same failure arrives as UnsupportedFormType)
+    bool HasV5Features() const { return m_api && m_api->version >= 5; }
+
     /// Get raw API pointer (nullptr if not connected)
     WheelerAPI::IWheelerAPI* GetAPI() const { return m_api; }
 
@@ -363,6 +519,7 @@ public:
 
         // Initialize slot tracking
         m_currentSlotFormIDs.resize(static_cast<size_t>(config->numEntries), 0);
+        m_currentSlotUniqueIDs.resize(static_cast<size_t>(config->numEntries), 0);
 
         return true;
     }
@@ -435,6 +592,7 @@ public:
         m_wheelIndex = -1;
         m_clientName.clear();
         m_currentSlotFormIDs.clear();
+        m_currentSlotUniqueIDs.clear();
     }
 
     // =========================================================================
@@ -443,6 +601,11 @@ public:
 
     /// Update the wheel with new items
     /// Only modifies slots that have changed, minimizing overhead.
+    ///
+    /// Weapons and armour are resolved to a carried instance via ResolveUniqueID().
+    /// A weapon the player is not carrying has no instance and cannot be added -
+    /// the slot is left empty and the add reports MissingUniqueID (v5+).
+    ///
     /// @param formIDs Vector of FormIDs to display (up to slot count)
     void UpdateItems(const std::vector<uint32_t>& formIDs)
     {
@@ -457,12 +620,27 @@ public:
 
         size_t maxSlots = static_cast<size_t>(entryCount);
 
+        // Resolve which instance each slot means before deciding whether anything
+        // changed: the form can stay the same while the instance behind it does not,
+        // and a slot still holding the old uniqueID would be dropped by Wheeler on
+        // its next draw, leaving the slot silently empty. One inventory pass for the
+        // whole wheel - this runs on a timer, so per-slot walks add up fast.
+        std::vector<uint32_t> wantedFormIDs(maxSlots, 0);
+        for (size_t i = 0; i < maxSlots && i < formIDs.size(); ++i) {
+            wantedFormIDs[i] = formIDs[i];
+        }
+        std::vector<uint16_t> resolvedUniqueIDs;
+        WheelerAPI::ResolveUniqueIDs(wantedFormIDs, resolvedUniqueIDs);
+
         for (size_t i = 0; i < maxSlots; ++i) {
-            uint32_t newFormID = (i < formIDs.size()) ? formIDs[i] : 0;
+            uint32_t newFormID = wantedFormIDs[i];
             uint32_t currentFormID = (i < m_currentSlotFormIDs.size()) ? m_currentSlotFormIDs[i] : 0;
 
+            uint16_t newUniqueID = (i < resolvedUniqueIDs.size()) ? resolvedUniqueIDs[i] : 0;
+            uint16_t currentUniqueID = (i < m_currentSlotUniqueIDs.size()) ? m_currentSlotUniqueIDs[i] : 0;
+
             // Skip if unchanged
-            if (newFormID == currentFormID) {
+            if (newFormID == currentFormID && newUniqueID == currentUniqueID) {
                 continue;
             }
 
@@ -473,12 +651,20 @@ public:
 
             // Add new item if we have one
             if (newFormID != 0) {
-                m_api->AddItemByFormID(m_wheelIndex, entryIndex, newFormID, 0);
+                m_api->AddItemByFormID(m_wheelIndex, entryIndex, newFormID, newUniqueID);
             }
 
-            // Track the update
+            // Track what we attempted, whether or not it took. Recording the attempt
+            // is what stops a form Wheeler will never accept - an unsupported type,
+            // or a weapon with no carried instance - from being cleared and re-added
+            // on every single update for the rest of the session. The slot retries by
+            // itself once its inputs change, which for a weapon means the moment the
+            // player picks one up and a uniqueID starts resolving.
             if (i < m_currentSlotFormIDs.size()) {
                 m_currentSlotFormIDs[i] = newFormID;
+            }
+            if (i < m_currentSlotUniqueIDs.size()) {
+                m_currentSlotUniqueIDs[i] = newUniqueID;
             }
         }
     }
@@ -497,6 +683,7 @@ public:
 
         // Reset tracking
         std::fill(m_currentSlotFormIDs.begin(), m_currentSlotFormIDs.end(), 0);
+        std::fill(m_currentSlotUniqueIDs.begin(), m_currentSlotUniqueIDs.end(), 0);
     }
 
     // =========================================================================
@@ -606,6 +793,7 @@ private:
     int32_t m_wheelIndex = -1;
     std::string m_clientName;  // stable key for RecoverWheelIndex()
     std::vector<uint32_t> m_currentSlotFormIDs;
+    std::vector<uint16_t> m_currentSlotUniqueIDs;  // instance behind each slot, 0 if n/a
 };
 
 
@@ -675,7 +863,8 @@ void OnGameUpdate()
     std::vector<uint32_t> recommendedFormIDs = GetMyRecommendations();
     std::vector<bool> isWildcard = GetWildcardFlags();
 
-    // Update the wheel
+    // Update the wheel. Weapons and armour are resolved to the instance the player
+    // is carrying; one they are not carrying cannot be shown, and its slot stays empty.
     client.UpdateItems(recommendedFormIDs);
 
     // Update subtext (v2 feature) — works on both populated and empty entries
@@ -719,5 +908,13 @@ void OnPluginShutdown()
 //    - API calls are thread-safe on the Wheeler side
 //    - This client implementation is not thread-safe - call from one thread
 //    - Add mutex protection if you need multi-threaded access
+//
+// 4. Only carried weapons and armour can be shown
+//    - Instance identity comes from the player's inventory, so a weapon the player
+//      does not have cannot go on a wheel. Every other type can be added from the
+//      form alone, carried or not.
+//    - ResolveUniqueID() returns the first carried instance. If you care which
+//      of several (tempered, enchanted) instances is used, resolve it yourself
+//      and call AddItemByFormID() directly.
 //
 // =============================================================================

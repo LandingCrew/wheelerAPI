@@ -15,45 +15,57 @@ void UniqueIDHandler::EnsureXListUniquenessInPcInventory()
       if (!pc) {
       return;
       }
-      auto inv = pc->GetInventory();
-      for (auto& [boundObj, data] : inv) {
-      auto rawCount = data.first;
-      auto& entryData = data.second;
+      // Walk InventoryChanges directly rather than GetInventory(): the latter hands back
+      // copies of each InventoryEntryData, and while stamping an existing extraDataList
+      // writes through the shared pointer, attaching a *new* one to a copy is discarded.
+      // These are the real entries, so AddExtraList sticks - same as the hooks in Hooks.cpp.
+      auto invChanges = pc->GetInventoryChanges();
+      if (!invChanges || !invChanges->entryList) {
+      return;
+      }
 
-      #undef GetObject
+      for (auto& entry : *invChanges->entryList) {
+      if (!entry || !entry->object) {
+        continue;
+      }
       //过滤非武器或非护甲
-      auto ft = entryData.get()->GetObject()->GetFormType();
+      auto ft = entry->object->GetFormType();
       if (ft != RE::FormType::Armor && ft != RE::FormType::Weapon) {
         continue;
       }
 
+      auto rawCount = entry->countDelta;
+
       //处理 ExtraDataLists
-      if (entryData->extraLists) {
-        for (auto& xList : *entryData->extraLists) {
+      if (entry->extraLists) {
+        for (auto& xList : *entry->extraLists) {
            if (xList) {
-            auto count = xList->GetCount();
-            rawCount -= count;
+            rawCount -= xList->GetCount();
             try {
               EnsureXListUniqueness(xList);
             } catch (std::exception& exception) {
               logger::error("Error occured when ensuring extraDataList uniqueness: {}, item: {}",
-                exception.what(), entryData->GetObject() ? entryData->GetObject()->GetName() : "unknown");
-#ifdef UNICODE
-#   define GetObject GetObjectW
-#else
-#   define GetObject GetObjectA
-#endif  // !UNICODE
+                exception.what(), entry->object->GetName());
             }
            }
         }
       }
 
-      //如果还有未处理的数量，移除这些物品
-      RE::ExtraDataList* xList = nullptr;// extra data list to be added
+      // Whatever count is left over is a plain stack that has never been equipped,
+      // tempered or enchanted, so it carries no extraDataList and therefore no
+      // uniqueID for the wheel to match an instance on. Give each one its own list.
       while (rawCount-- > 0) {
-        // workaround: directly adding the extradatalist doesn't work. instead we remove the item with the removal target
-        // set to pc, and the hook on addItem will append the extraDatalist.
-        pc->RemoveItem(boundObj, 1, RE::ITEM_REMOVE_REASON::kStoreInContainer, xList, pc);
+        RE::ExtraDataList* xList = nullptr;
+        try {
+           EnsureXListUniqueness(xList);
+           if (xList) {
+            entry->AddExtraList(xList);
+           }
+        } catch (std::exception& exception) {
+           logger::error("Error occured when attaching an extraDataList to {}: {}",
+            entry->object->GetName(), exception.what());
+           break;
+        }
       }
       }
    } catch (std::exception& exception) {

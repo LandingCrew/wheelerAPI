@@ -160,6 +160,10 @@ void WheelEntry::drawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::In
            continue;  //不要删除 shout
         }
         if (!item->IsAvailable(a_imap)) {
+           // An item leaves a wheel silently, which makes "it vanished" impossible to
+           // tell apart from "it was never added". Say which one went.
+           logger::debug("WheelEntry: dropping item {:08X} at index {} - no longer available",
+            item->GetFormID(), i);
            //标记删除的物品，不立即删除以防止影响遍历过程
            _items.erase(_items.begin() + i);
            if (i < _selectedItem && _selectedItem > 0) {

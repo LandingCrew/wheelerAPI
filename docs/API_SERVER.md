@@ -1,10 +1,16 @@
-# Wheeler API - Server Implementation Reference (v2)
+# Wheeler API - Server Implementation Reference (v5)
 
 This document describes what Wheeler (the server) must implement to support external clients.
 
 ## Overview
 
 Wheeler exposes a C API via a single exported function `GetWheelerAPI()` that returns a struct of function pointers. Clients call this once on init and use the returned interface.
+
+## What's New in v5
+
+- **`MissingUniqueID` result code** - `AddItemByFormID()` now names the real problem
+  when a weapon or armour arrives without instance identity, instead of blaming the
+  form type. See [Result Codes](#result-codes).
 
 ## What's New in v2
 
@@ -23,7 +29,7 @@ extern "C" __declspec(dllexport) IWheelerAPI* GetWheelerAPI();
 ```cpp
 struct IWheelerAPI
 {
-    uint32_t version;  // API_VERSION = 4, bump on breaking changes
+    uint32_t version;  // API_VERSION = 5, bump on breaking changes
 
     // Status
     bool (*IsInitialized)();
@@ -586,9 +592,30 @@ enum class Result : int32_t
     NotManagedWheel = -10,
     InEditMode = -11,
     EntryNotEmpty = -12,
+    MissingUniqueID = -13,  // v5
     InternalError = -100
 };
 ```
+
+### MissingUniqueID (v5)
+
+`AddItemByFormID()` returns this when a `Weapon` or `Armor` is passed `uniqueID == 0`.
+
+Weapons and armour are stored as instances rather than forms, because the wheel has
+to know which iron sword it is holding to equip it, count the stack and show it as
+equipped. That identity is the `ExtraUniqueID` on the item's `ExtraDataList`, and
+`GetItemExtraDataAndCount()` matches on it and nothing else. An item accepted with
+`uniqueID == 0` matches no instance, so `IsAvailable()` returns false and
+`WheelEntry::drawSlot()` erases it from the entry on the next draw - the caller
+would get a success code and an index for an item that silently disappears.
+
+Before v5 this came back as `UnsupportedFormType` (-6), which sent integrators
+looking at the form type when the form type was never the problem. Clients can gate
+on `version >= 5` to know the distinct code is available; on older builds the same
+failure still arrives as -6.
+
+Every other supported form type ignores the parameter, so `0` is correct for spells,
+shouts, ammo, potions, scrolls, misc items, soul gems and carryable lights.
 
 ## Files Modified
 

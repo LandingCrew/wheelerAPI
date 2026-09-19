@@ -51,6 +51,14 @@ namespace WheelerAPI
    //     save load, so a client that recreates its wheels every load MUST call
    //     DeleteManagedWheelsForClient() first or it will accumulate duplicates.
    //
+   // v5: Added MissingUniqueID. Weapons and armour added with uniqueID 0 used to come
+   //     back as UnsupportedFormType, which pointed integrators at the form type when
+   //     the form type was never the problem. A client can gate on version >= 5 to
+   //     know the distinct code is available.
+   //     BEHAVIOUR CHANGE: AddItemByFormID() returns MissingUniqueID (-13) instead of
+   //     UnsupportedFormType (-6) for a Weapon or Armor with uniqueID 0. A client that
+   //     special-cased -6 on that path needs to handle -13 as well.
+   //
    // Behaviour fix inside v3/v4, deliberately NOT a version bump: the signature and
    // the ABI are unchanged and no client needs to recompile.
    //     DeleteManagedWheelsForClient() no longer refuses a client's last wheel. It
@@ -60,7 +68,7 @@ namespace WheelerAPI
    //     it would get for owning none. It now removes every match, leaving an empty
    //     UNMANAGED wheel behind if that would otherwise empty Wheeler's list, so a
    //     non-negative return means no wheel for that client survives.
-   constexpr uint32_t API_VERSION = 4;
+   constexpr uint32_t API_VERSION = 5;
 
    // ============================================================================
    // Result Codes
@@ -81,6 +89,7 @@ namespace WheelerAPI
       NotManagedWheel = -10,
       InEditMode = -11,
       EntryNotEmpty = -12,
+      MissingUniqueID = -13,  // v5: weapon/armour needs a non-zero uniqueID
       InternalError = -100
    };
 
