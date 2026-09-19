@@ -8,6 +8,12 @@ This document describes how external plugins (like On Cue) integrate with Wheele
 
 Clients access Wheeler's functionality through a single exported function that returns an interface struct. This approach requires only one `GetProcAddress` call and provides type-safe access to all API functions.
 
+## What's New in v5
+
+- **`MissingUniqueID` result code** - adding a weapon or armour without instance
+  identity now reports the real problem instead of `UnsupportedFormType`.
+  See [Adding Weapons and Armour](#adding-weapons-and-armour).
+
 ## What's New in v4
 
 **Wheeler no longer destroys your wheels on save load.** Managed wheels used to be wiped along with the user's own wheels during Wheeler's load-time reset. Because managed wheels are deliberately excluded from the co-save, there was nothing to restore them from: a client whose creation happened to run before that reset lost its wheels for the rest of the session, with no way to detect or repair it. Managed wheels now survive the reset.
@@ -156,6 +162,81 @@ bool SetupMyWheel()
 }
 ```
 
+## Adding Weapons and Armour
+
+`AddItemByFormID()`'s last parameter is not optional for weapons and armour.
+
+```cpp
+int32_t (*AddItemByFormID)(int32_t wheelIndex, int32_t entryIndex, uint32_t formID, uint16_t uniqueID);
+```
+
+Wheeler stores a weapon or a piece of armour by **instance**, not by form. It has to
+know *which* iron sword you mean in order to equip it, count the stack and show it as
+currently equipped - a tempered one and a plain one share a FormID but are not
+interchangeable. That identity is the `ExtraUniqueID` on the item's `ExtraDataList`.
+
+So `AddItemByFormID(wheel, entry, formID, 0)` **cannot work for a weapon or armour**.
+It returns `MissingUniqueID` (-13) on v5+, or the misleading `UnsupportedFormType`
+(-6) on older builds. Every other supported type ignores the parameter, so `0` is
+correct for spells, shouts, ammo, potions, scrolls, misc items, soul gems and
+carryable lights.
+
+Read the uniqueID off the instance the player is carrying:
+
+```cpp
+uint16_t ResolveUniqueID(uint32_t formID)
+{
+    auto* pc = RE::PlayerCharacter::GetSingleton();
+    auto* form = pc ? RE::TESForm::LookupByID(formID) : nullptr;
+    if (!form) {
+        return 0;
+    }
+
+    const auto formType = form->GetFormType();
+    if (formType != RE::FormType::Weapon && formType != RE::FormType::Armor) {
+        return 0;  // parameter is ignored for these
+    }
+
+    auto* invChanges = pc->GetInventoryChanges();
+    if (!invChanges || !invChanges->entryList) {
+        return 0;
+    }
+
+    for (auto& entry : *invChanges->entryList) {
+        if (!entry || !entry->object || entry->object->GetFormID() != formID || !entry->extraLists) {
+            continue;
+        }
+        for (auto* xList : *entry->extraLists) {
+            if (auto* xID = xList ? xList->GetByType<RE::ExtraUniqueID>() : nullptr) {
+                if (xID->uniqueID != 0) {
+                    return xID->uniqueID;
+                }
+            }
+        }
+    }
+
+    return 0;  // not carried
+}
+```
+
+`WheelerAPIClient.h` ships this as `WheelerAPI::ResolveUniqueID()`, and its
+`UpdateItems()` calls it for you.
+
+Two consequences worth designing around:
+
+- **A weapon the player is not carrying cannot go on a wheel.** There is no instance
+  to point at. Filter those out before you offer them as recommendations.
+- **The instance can change while the FormID does not.** If you cache "slot 2 already
+  holds form 0x12EB7" and the player swaps to a different iron sword, the wheel is
+  holding a uniqueID that no longer resolves, and Wheeler drops the item from the
+  entry on its next draw - leaving the slot quietly empty. Track the uniqueID
+  alongside the FormID and re-add when either changes.
+
+If a carried weapon has no uniqueID at all, that is a Wheeler bug rather than a
+client one - Wheeler stamps every weapon and armour in the player's inventory on
+game load. Wheeler builds before this was fixed missed stacks that had never been
+equipped, tempered or enchanted.
+
 ## WheelConfig Options
 
 | Field | Type | Description |
@@ -249,6 +330,7 @@ Only update slots when the content actually changes:
 
 ```cpp
 std::vector<RE::FormID> m_currentSlotFormIDs;
+std::vector<uint16_t> m_currentSlotUniqueIDs;  // instance behind each slot, 0 if n/a
 
 void UpdateRecommendations(const std::vector<uint32_t>& recommendedFormIDs)
 {
@@ -260,8 +342,14 @@ void UpdateRecommendations(const std::vector<uint32_t>& recommendedFormIDs)
         uint32_t newFormID = (i < recommendedFormIDs.size()) ? recommendedFormIDs[i] : 0;
         uint32_t currentFormID = (i < m_currentSlotFormIDs.size()) ? m_currentSlotFormIDs[i] : 0;
 
+        // Resolve the instance before comparing: the form can stay the same while the
+        // instance behind it does not, and a stale uniqueID means Wheeler drops the
+        // item on its next draw, leaving the slot silently empty.
+        uint16_t newUniqueID = (newFormID != 0) ? ResolveUniqueID(newFormID) : 0;
+        uint16_t currentUniqueID = (i < m_currentSlotUniqueIDs.size()) ? m_currentSlotUniqueIDs[i] : 0;
+
         // Skip if unchanged
-        if (newFormID == currentFormID) {
+        if (newFormID == currentFormID && newUniqueID == currentUniqueID) {
             continue;
         }
 
@@ -270,12 +358,18 @@ void UpdateRecommendations(const std::vector<uint32_t>& recommendedFormIDs)
 
         // Add new item if we have one
         if (newFormID != 0) {
-            g_wheelerAPI->AddItemByFormID(g_myWheelIndex, i, newFormID, 0);
+            if (g_wheelerAPI->AddItemByFormID(g_myWheelIndex, i, newFormID, newUniqueID) < 0) {
+                newFormID = 0;      // not carried; forget the slot so a later
+                newUniqueID = 0;    // update retries it
+            }
         }
 
         // Track the update
         if (i < m_currentSlotFormIDs.size()) {
             m_currentSlotFormIDs[i] = newFormID;
+        }
+        if (i < m_currentSlotUniqueIDs.size()) {
+            m_currentSlotUniqueIDs[i] = newUniqueID;
         }
     }
 }
@@ -413,8 +507,10 @@ void EnsureEntryCount(int32_t needed)
 ```cpp
 void SafeAddItem(int32_t entry, uint32_t formID)
 {
+    // 0 is correct for everything except weapons and armour, which need the
+    // uniqueID of a carried instance
     int32_t result = g_wheelerAPI->AddItemByFormID(
-        g_myWheelIndex, entry, formID, 0);
+        g_myWheelIndex, entry, formID, ResolveUniqueID(formID));
 
     if (result < 0) {
         auto error = static_cast<WheelerAPI::Result>(result);
@@ -426,6 +522,11 @@ void SafeAddItem(int32_t entry, uint32_t formID)
         case WheelerAPI::Result::FormNotFound:
             // Item doesn't exist in game
             LogWarning("Form {:08X} not found", formID);
+            break;
+        case WheelerAPI::Result::MissingUniqueID:
+            // v5+: weapon/armour the player isn't carrying, so there is no instance
+            // to point at. Pre-v5 Wheeler reports this as UnsupportedFormType.
+            LogWarning("Form {:08X} not carried, can't add", formID);
             break;
         case WheelerAPI::Result::InEditMode:
             // Queue for later (shouldn't happen for managed wheels)
@@ -545,6 +646,9 @@ namespace OnCue::Wheeler
                 if (newFormID != currentFormID) {
                     m_api->ClearEntry(m_wheelIndex, static_cast<int32_t>(i));
                     if (newFormID != 0) {
+                        // 0 is correct here because these are spells. For weapons or
+                        // armour, resolve a carried instance's uniqueID instead - see
+                        // "Adding Weapons and Armour" above.
                         m_api->AddItemByFormID(m_wheelIndex, static_cast<int32_t>(i), newFormID, 0);
                     }
                     m_currentSlotFormIDs[i] = newFormID;
@@ -582,7 +686,7 @@ namespace OnCue::Wheeler
 ```cpp
 namespace WheelerAPI
 {
-    constexpr uint32_t API_VERSION = 4;
+    constexpr uint32_t API_VERSION = 5;
 
     enum class Result : int32_t
     {
@@ -599,6 +703,7 @@ namespace WheelerAPI
         NotManagedWheel = -10,
         InEditMode = -11,
         EntryNotEmpty = -12,
+        MissingUniqueID = -13,  // v5: weapon/armour needs a non-zero uniqueID
         InternalError = -100
     };
 

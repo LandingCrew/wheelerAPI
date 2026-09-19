@@ -555,6 +555,16 @@ namespace WheelerAPI
       return static_cast<int32_t>(Result::FormNotFound);
       }
 
+      // Weapons and armour are tracked by instance rather than by form: the wheel has to
+      // know WHICH iron sword it holds in order to equip, count and highlight it, and that
+      // identity is the uniqueID on the item's ExtraDataList. 0 is not a valid one, and an
+      // item accepted with it would be dropped from the entry on the next draw, so reject
+      // it here with a code that names the actual problem. The form type is fine.
+      const RE::FormType formType = form->GetFormType();
+      if ((formType == RE::FormType::Weapon || formType == RE::FormType::Armor) && uniqueID == 0) {
+      return static_cast<int32_t>(Result::MissingUniqueID);
+      }
+
       // Create the wheel item
       std::shared_ptr<WheelItem> item = WheelItemFactory::MakeWheelItemFromFormID(formID, uniqueID);
       if (!item) {

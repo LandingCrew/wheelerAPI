@@ -12,6 +12,18 @@
 //   3. Get API pointer: GetProcAddress(hWheeler, "GetWheelerAPI")
 //   4. Cast and call to get IWheelerAPI*
 //
+// Note on AddItemByFormID's uniqueID parameter:
+//   Weapons and armour are stored by INSTANCE, not by form - Wheeler has to know
+//   which iron sword you mean to equip it and show it as equipped. Pass the
+//   uniqueID from that instance's ExtraUniqueID in the player's inventory.
+//   Passing 0 fails with MissingUniqueID (v5+) or, on older builds, the
+//   misleading UnsupportedFormType.
+//
+//   Every other type ignores the parameter, so 0 is correct for spells, shouts,
+//   ammo, potions, scrolls, misc items, soul gems and carryable lights.
+//
+//   WheelerAPIClient.h has a ready-made ResolveUniqueID() if you want one.
+//
 // =============================================================================
 
 #pragma once
@@ -21,7 +33,7 @@
 namespace WheelerAPI
 {
     /// API version - check this against IWheelerAPI::version
-    constexpr uint32_t API_VERSION = 4;
+    constexpr uint32_t API_VERSION = 5;
 
     /// Result codes returned by API functions
     enum class Result : int32_t
@@ -39,6 +51,7 @@ namespace WheelerAPI
         NotManagedWheel = -10,
         InEditMode = -11,
         EntryNotEmpty = -12,
+        MissingUniqueID = -13,    ///< v5: weapon/armour needs a non-zero uniqueID
         InternalError = -100
     };
 
