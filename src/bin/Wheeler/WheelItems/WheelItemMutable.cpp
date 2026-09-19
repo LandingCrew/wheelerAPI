@@ -55,7 +55,12 @@ std::pair<int, RE::ExtraDataList*> WheelItemMutable::GetItemExtraDataAndCount(RE
       bool thisClean = false;
 
       //检查物品是否是干净的（没有附魔，没有毒，没有强化）
-      if (extraList->HasType(RE::ExtraDataType::kEnchantment) && !extraList->HasType(RE::ExtraDataType::kHealth)) {
+      // "Clean" means interchangeable with any other clean instance of the same form,
+      // so every way an instance can be made distinct has to be absent. Matches the
+      // same test in Utils::Inventory::GetWeaponEquippedHand.
+      if (!extraList->HasType(RE::ExtraDataType::kEnchantment)
+        && !extraList->HasType(RE::ExtraDataType::kHealth)
+        && !extraList->HasType(RE::ExtraDataType::kPoison)) {
         thisClean = true;  // item is clean
       }
 
