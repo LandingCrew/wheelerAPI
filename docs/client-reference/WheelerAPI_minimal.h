@@ -1,5 +1,5 @@
 // =============================================================================
-// Wheeler API - Minimal Types Header (v2)
+// Wheeler API - Minimal Types Header (v5)
 // =============================================================================
 //
 // This header contains only the types needed to interface with Wheeler.dll.

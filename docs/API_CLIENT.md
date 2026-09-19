@@ -1,4 +1,4 @@
-# Wheeler API - Client Implementation Reference (v4)
+# Wheeler API - Client Implementation Reference (v5)
 
 This document describes how external plugins (like On Cue) integrate with Wheeler.
 
@@ -206,6 +206,12 @@ uint16_t ResolveUniqueID(uint32_t formID)
         if (!entry || !entry->object || entry->object->GetFormID() != formID || !entry->extraLists) {
             continue;
         }
+        // An entry can linger with a non-positive count after the last copy was
+        // dropped or sold, still carrying its old extraLists. A uniqueID read off
+        // one of those resolves an item the player no longer has.
+        if (entry->countDelta <= 0) {
+            continue;
+        }
         for (auto* xList : *entry->extraLists) {
             if (auto* xID = xList ? xList->GetByType<RE::ExtraUniqueID>() : nullptr) {
                 if (xID->uniqueID != 0) {
@@ -221,6 +227,12 @@ uint16_t ResolveUniqueID(uint32_t formID)
 
 `WheelerAPIClient.h` ships this as `WheelerAPI::ResolveUniqueID()`, and its
 `UpdateItems()` calls it for you.
+
+If you are resolving a whole wheel at once, walk the inventory once rather than
+once per slot - wheel updates run on a timer, and an 8-slot wheel over a large
+inventory otherwise costs thousands of entry visits every tick. The shipped
+header does this via `WheelerAPI::ResolveUniqueIDs()`, which takes the slot
+FormIDs and fills a parallel vector of uniqueIDs in a single pass.
 
 Two consequences worth designing around:
 
@@ -358,13 +370,14 @@ void UpdateRecommendations(const std::vector<uint32_t>& recommendedFormIDs)
 
         // Add new item if we have one
         if (newFormID != 0) {
-            if (g_wheelerAPI->AddItemByFormID(g_myWheelIndex, i, newFormID, newUniqueID) < 0) {
-                newFormID = 0;      // not carried; forget the slot so a later
-                newUniqueID = 0;    // update retries it
-            }
+            g_wheelerAPI->AddItemByFormID(g_myWheelIndex, i, newFormID, newUniqueID);
         }
 
-        // Track the update
+        // Track what we attempted, whether or not it took. Recording the attempt is
+        // what stops a form Wheeler will never accept - an unsupported type, or a
+        // weapon with no carried instance - from being cleared and re-added on every
+        // update for the rest of the session. The slot retries by itself once its
+        // inputs change, which for a weapon means the moment the player picks one up.
         if (i < m_currentSlotFormIDs.size()) {
             m_currentSlotFormIDs[i] = newFormID;
         }
