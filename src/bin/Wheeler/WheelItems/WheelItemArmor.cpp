@@ -138,7 +138,7 @@ void WheelItemArmor::toggleEquip()
    if (!pc) {
       return;
    }
-   RE::TESObjectREFR::InventoryItemMap imap = pc->GetInventory();
+   RE::TESObjectREFR::InventoryItemMap imap = Utils::Inventory::GetInventory(pc);
    if (this->IsActive(imap)) {
       this->unequipArmor();
    } else {
@@ -156,7 +156,7 @@ void WheelItemArmor::equipArmor()
    if (!aeMan) {
       return;
    }
-   RE::TESObjectREFR::InventoryItemMap inv = pc->GetInventory();
+   RE::TESObjectREFR::InventoryItemMap inv = Utils::Inventory::GetInventory(pc);
    auto itemData = this->GetItemExtraDataAndCount(inv);
    int count = itemData.first;
    RE::ExtraDataList* extraData = itemData.second;

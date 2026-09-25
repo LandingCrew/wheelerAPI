@@ -164,7 +164,7 @@ void WheelItemWeapon::equipItem(bool a_toRight)
       if (!pc || !pc->Is3DLoaded()) {
       return;
       }
-      RE::TESObjectREFR::InventoryItemMap inv = pc->GetInventory();
+      RE::TESObjectREFR::InventoryItemMap inv = Utils::Inventory::GetInventory(pc);
       auto itemData = this->GetItemExtraDataAndCount(inv);
       int count = itemData.first;
       RE::ExtraDataList* extraData = itemData.second;

@@ -85,6 +85,62 @@ namespace Utils
 
    namespace Inventory
    {
+      // Mirrors CommonLib's TESObjectREFR::GetInventory(), which asserts that no base form
+      // appears twice in InventoryChanges::entryList. The engine does not guarantee that:
+      // other mods and some scripted adds leave a form split across two entries. In a
+      // debug build the assert stops the game; in release the second entry is silently
+      // dropped, taking its count and its extraDataLists - and so its uniqueIDs - with it.
+      // Here a repeat is folded into the first: counts summed, extraDataLists pooled.
+      RE::TESObjectREFR::InventoryItemMap GetInventory(RE::TESObjectREFR* a_refr)
+      {
+      RE::TESObjectREFR::InventoryItemMap results;
+      if (!a_refr) {
+        return results;
+      }
+
+      auto invChanges = a_refr->GetInventoryChanges();
+      if (invChanges && invChanges->entryList) {
+        for (auto& entry : *invChanges->entryList) {
+           if (!entry || !entry->object) {
+            continue;
+           }
+           auto it = results.find(entry->object);
+           if (it == results.end()) {
+            results.emplace(entry->object,
+              std::make_pair(entry->countDelta, std::make_unique<RE::InventoryEntryData>(*entry)));
+            continue;
+           }
+           auto& [count, merged] = it->second;
+           count += entry->countDelta;
+           merged->countDelta += entry->countDelta;
+           if (entry->extraLists) {
+            for (auto& xList : *entry->extraLists) {
+              merged->AddExtraList(xList);  // a copy's list; the ExtraDataLists stay the game's
+            }
+           }
+        }
+      }
+
+      auto container = a_refr->GetContainer();
+      if (container) {
+        container->ForEachContainerObject([&](RE::ContainerObject& a_entry) {
+           auto obj = a_entry.obj;
+           if (!obj) {
+            return RE::BSContainer::ForEachResult::kContinue;
+           }
+           auto it = results.find(obj);
+           if (it == results.end()) {
+            results.emplace(obj, std::make_pair(a_entry.count, std::make_unique<RE::InventoryEntryData>(obj, 0)));
+           } else if (!(it->second.second && it->second.second->IsLeveled())) {
+            it->second.first += a_entry.count;
+           }
+           return RE::BSContainer::ForEachResult::kContinue;
+        });
+      }
+
+      return results;
+      }
+
       std::pair<RE::EnchantmentItem*, float> GetEntryEnchantAndHealth(const std::unique_ptr<RE::InventoryEntryData>& a_invEntry)
       {
       std::pair<RE::EnchantmentItem*, float> ret = { nullptr, -1.f };

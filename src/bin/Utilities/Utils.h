@@ -29,6 +29,10 @@ namespace Utils
 
    namespace Inventory
    {
+      // Drop-in for TESObjectREFR::GetInventory() that tolerates the same base form
+      // appearing in more than one InventoryChanges entry. Use this, never GetInventory().
+      RE::TESObjectREFR::InventoryItemMap GetInventory(RE::TESObjectREFR* a_refr);
+
       std::pair<RE::EnchantmentItem*, float> GetEntryEnchantAndHealth(const std::unique_ptr<RE::InventoryEntryData>& a_invEntry);
 
       void GetEntryExtraDataLists(std::vector<RE::ExtraDataList*>& r_ret, const std::unique_ptr<RE::InventoryEntryData>& a_invEntry);

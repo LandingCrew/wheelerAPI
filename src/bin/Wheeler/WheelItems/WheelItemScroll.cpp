@@ -68,7 +68,7 @@ void WheelItemScroll::ActivateItemSecondary()
    if (!pc || !aeMan) {
       return;
    }
-   RE::TESObjectREFR::InventoryItemMap iMap = pc->GetInventory();
+   RE::TESObjectREFR::InventoryItemMap iMap = Utils::Inventory::GetInventory(pc);
    if (!this->IsAvailable(iMap)) {
       return;
    }
@@ -82,7 +82,7 @@ void WheelItemScroll::ActivateItemPrimary()
    if (!pc || !aeMan) {
       return;
    }
-   RE::TESObjectREFR::InventoryItemMap iMap = pc->GetInventory();
+   RE::TESObjectREFR::InventoryItemMap iMap = Utils::Inventory::GetInventory(pc);
    if (!this->IsAvailable(iMap)) {
       return;
    }
