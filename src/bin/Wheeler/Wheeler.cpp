@@ -227,18 +227,8 @@ void Wheeler::Update(float a_deltaTime)
       wheelCenter.y += (1 - fadeLerp) * Config::Animation::ToggleVerticalFadeDistance;
       wheelCenter.x += (1 - fadeLerp) * Config::Animation::ToggleHorizontalFadeDistance;
 
-      RE::TESObjectREFR::InventoryItemMap inv = RE::PlayerCharacter::GetSingleton()->GetInventory();
+      RE::TESObjectREFR::InventoryItemMap inv = Utils::Inventory::GetInventory(RE::PlayerCharacter::GetSingleton());
 
-      /*
-      //filter out duplicated FormID items to prevent Clib assertion failure
-      RE::PlayerCharacter* player = RE::PlayerCharacter::GetSingleton();
-      if (!player) {
-      return;
-      }
-
-      //use filtered inventory to prevent duplicated FormID items
-      RE::TESObjectREFR::InventoryItemMap filteredInventory = Utils::Inventory::GetFilteredInventory(player);
-      RE::TESObjectREFR::InventoryItemMap& inv = filteredInventory;*/
       
 
       float cursorAngle = atan2f(_cursorPos.y, _cursorPos.x);  // where the cursor is pointing to

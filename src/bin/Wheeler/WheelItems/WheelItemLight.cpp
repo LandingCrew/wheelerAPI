@@ -63,7 +63,7 @@ void WheelItemLight::toggleEquip()
    if (!pc || !aeMan) {
       return;
    }
-   RE::TESObjectREFR::InventoryItemMap invMap = pc->GetInventory();
+   RE::TESObjectREFR::InventoryItemMap invMap = Utils::Inventory::GetInventory(pc);
    if (this->IsAvailable(invMap)) {
       if (this->IsActive(invMap)) {
       aeMan->UnequipObject(pc, this->_light);
