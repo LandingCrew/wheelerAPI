@@ -93,6 +93,7 @@ namespace Utils
       // Here a repeat is folded into the first: counts summed, extraDataLists pooled.
       RE::TESObjectREFR::InventoryItemMap GetInventory(RE::TESObjectREFR* a_refr)
       {
+      ZoneScoped;
       RE::TESObjectREFR::InventoryItemMap results;
       if (!a_refr) {
         return results;

@@ -12,6 +12,7 @@ Wheel::~Wheel()
 void Wheel::Draw(ImVec2 a_wheelCenter, float a_cursorAngle, bool a_cursorCentered, RE::TESObjectREFR::InventoryItemMap& a_imap,
    DrawArgs a_drawArgs)
 {
+   ZoneScoped;
    try {
       using namespace Config::Styling::Wheel;
 

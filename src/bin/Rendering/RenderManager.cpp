@@ -169,21 +169,33 @@ void RenderManager::DXGIPresentHook::thunk(std::uint32_t a_p1)
 {
    func(a_p1);
 
+   // One game frame per call. Marked before the early return so Tracy still sees
+   // frames before the D3D hook is ready.
+   FrameMark;
+
    if (!D3DInitHook::initialized.load())
       return;
 
+   ZoneScopedN("Wheeler Present");
+
    // prologue
-   ImGui_ImplDX11_NewFrame();
-   ImGui_ImplWin32_NewFrame();
-   ImGui::NewFrame();
+   {
+      ZoneScopedN("ImGui NewFrame");
+      ImGui_ImplDX11_NewFrame();
+      ImGui_ImplWin32_NewFrame();
+      ImGui::NewFrame();
+   }
 
    // do stuff
    RenderManager::draw();
 
    // epilogue
-   ImGui::EndFrame();
-   ImGui::Render();
-   ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+   {
+      ZoneScopedN("ImGui Render");
+      ImGui::EndFrame();
+      ImGui::Render();
+      ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+   }
 }
 
 struct ImageSet
@@ -237,6 +249,8 @@ float RenderManager::GetResolutionScaleHeight()
 
 void RenderManager::draw()
 {
+
+   ZoneScoped;
 
    // Add UI elements here
    float deltaTime = ImGui::GetIO().DeltaTime;

@@ -110,6 +110,32 @@ target_link_libraries(
       Freetype::Freetype
 )
 
+# Tracy profiler client, statically linked into the plugin. Off by default, so a
+# normal build needs neither the submodule nor the client. Profiling.h turns the
+# zone macros into nothing when it is off.
+if(WHEELER_TRACY)
+   set(TRACY_DIR "${ROOT_DIR}/extern/tracy")
+   if(NOT EXISTS "${TRACY_DIR}/CMakeLists.txt")
+      message(FATAL_ERROR "WHEELER_TRACY is ON but extern/tracy is empty. Run: git submodule update --init extern/tracy")
+   endif()
+
+   set(TRACY_ENABLE ON CACHE BOOL "" FORCE)
+   # Collect only while the Tracy profiler is connected, so a Tracy build can be
+   # left installed without buffering every frame from game start.
+   set(TRACY_ON_DEMAND ON CACHE BOOL "" FORCE)
+   # Leave crashes to the game's crash logger. Tracy's handler would otherwise
+   # take the exception first.
+   set(TRACY_NO_CRASH_HANDLER ON CACHE BOOL "" FORCE)
+   # Listen on this machine only. Discovery broadcasts then stay on loopback too,
+   # so the profiler still finds the game without exposing it to the network.
+   set(TRACY_ONLY_LOCALHOST ON CACHE BOOL "" FORCE)
+
+   add_subdirectory("${TRACY_DIR}" tracy EXCLUDE_FROM_ALL)
+
+   target_link_libraries("${PROJECT_NAME}" PRIVATE Tracy::TracyClient)
+   target_compile_definitions("${PROJECT_NAME}" PRIVATE WHEELER_TRACY)
+endif()
+
 target_precompile_headers(
    "${PROJECT_NAME}"
    PRIVATE

@@ -134,6 +134,7 @@ void Wheeler::notifyItemActivated(int32_t a_wheelIndex, int32_t a_entryIndex, in
 
 void Wheeler::Update(float a_deltaTime)
 {
+   ZoneScoped;
    DeferredNotifications defer;  // declared first so it unwinds after `lock`
    std::shared_lock<std::shared_mutex> lock(_wheelDataLock);
    using namespace Config::Styling::Wheel;
@@ -434,6 +435,7 @@ void Wheeler::tryCloseWheelerLocked()
 
 void Wheeler::OpenWheeler()
 {
+   ZoneScoped;
    DeferredNotifications defer;  // declared first so it unwinds after `lock`
    std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    if (!RE::PlayerCharacter::GetSingleton() || !RE::PlayerCharacter::GetSingleton()->Is3DLoaded()) {
@@ -510,6 +512,7 @@ void Wheeler::OpenWheeler()
 
 void Wheeler::CloseWheeler()
 {
+   ZoneScoped;
    DeferredNotifications defer;  // declared first so it unwinds after `lock`
    std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    closeWheelerLocked();
@@ -716,6 +719,7 @@ bool Wheeler::GetCursorAngleRadian(float& r_ret)
 
 void Wheeler::ActivateHoveredEntrySecondary()
 {
+   ZoneScoped;
    DeferredNotifications defer;  // declared first so it unwinds after `lock`
    std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    if (_wheels.empty()) {
@@ -775,6 +779,7 @@ void Wheeler::ActivateHoveredEntrySecondary()
 
 void Wheeler::ActivateHoveredEntryPrimary()
 {
+   ZoneScoped;
    DeferredNotifications defer;  // declared first so it unwinds after `lock`
    std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    if (_wheels.empty()) {
@@ -992,6 +997,7 @@ bool Wheeler::IsInEditMode() { return _editMode; }
 
 void Wheeler::ReloadFromJsonObj(const nlohmann::json& j_wheeler, SKSE::SerializationInterface* a_intfc)
 {
+   ZoneScoped;
    DeferredNotifications defer;  // declared first so it unwinds after `lock`
    std::unique_lock<std::shared_mutex> lock(_wheelDataLock);
    clearUnmanagedLocked();

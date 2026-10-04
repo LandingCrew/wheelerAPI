@@ -35,6 +35,7 @@ void WheelEntry::DrawBackGround(
    bool hovered, 
    int numArcSegments, RE::TESObjectREFR::InventoryItemMap& inv, DrawArgs a_drawARGS)
 {
+   ZoneScoped;
    bool active = this->IsActive(inv);
    //TODO:
    // 1. add separate config for background texture scaling
@@ -94,6 +95,7 @@ void WheelEntry::DrawBackGround(
 
 void WheelEntry::DrawSlotAndHighlight(ImVec2 a_wheelCenter, ImVec2 a_entryCenter, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs)
 {
+   ZoneScoped;
    try {
 
       if (a_hovered) {
@@ -248,6 +250,7 @@ bool WheelEntry::IsAvailable(RE::TESObjectREFR::InventoryItemMap& a_inv)
 
 void WheelEntry::ActivateItemSecondary(bool editMode)
 {
+   ZoneScoped;
    std::unique_lock<std::shared_mutex> lock(this->_lock);
 
    if (_items.size() == 0) {
@@ -269,6 +272,7 @@ void WheelEntry::ActivateItemSecondary(bool editMode)
 
 void WheelEntry::ActivateItemPrimary(bool editMode)
 {
+   ZoneScoped;
    std::unique_lock<std::shared_mutex> lock(this->_lock);
 
    if (!editMode) { 
@@ -287,6 +291,7 @@ void WheelEntry::ActivateItemPrimary(bool editMode)
 
 void WheelEntry::ActivateItemSpecial(bool editMode)
 {
+   ZoneScoped;
    std::unique_lock<std::shared_mutex> lock(this->_lock);
    if (editMode || _items.size() == 0) {
       return; // nothing to do

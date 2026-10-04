@@ -54,6 +54,7 @@ namespace WheelerAPI
    void NotifyItemActivated(int32_t wheelIndex, int32_t entryIndex, int32_t itemIndex, uint32_t formID, bool isPrimary,
       const std::string& clientName)
    {
+      ZoneScoped;
       if (!clientName.empty()) {
       INFO("WheelerAPI: Item activated on managed wheel {} (client: {}), entry={}, item={}, formID={:08X}, primary={}",
         wheelIndex, clientName, entryIndex, itemIndex, formID, isPrimary);
@@ -73,6 +74,7 @@ namespace WheelerAPI
    // Called by Wheeler when edit mode changes
    void NotifyEditModeChanged(bool entered, const WheelChange* changes, size_t changeCount)
    {
+      ZoneScoped;
       EditModeCallback callback = nullptr;
       {
       std::lock_guard<std::mutex> lock(s_callbackLock);
@@ -86,6 +88,7 @@ namespace WheelerAPI
    // Called by Wheeler when wheel opens/closes
    void NotifyWheelStateChanged(int32_t wheelIndex, bool isOpen)
    {
+      ZoneScoped;
       // Log managed wheel count on state change (best-effort diagnostic)
       {
       int managedCount = s_managedWheelCount.load(std::memory_order_relaxed);

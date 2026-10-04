@@ -89,6 +89,7 @@ static inline std::uint32_t GetGamepadIndex(RE::BSWin32GamepadDevice::Key a_key)
 }
 void Input::ProcessAndFilter(RE::InputEvent** a_event)
 {
+   ZoneScoped;
    if (!a_event) {
       return;
    }
