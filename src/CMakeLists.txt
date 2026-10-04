@@ -126,6 +126,13 @@ if(WHEELER_TRACY)
    # Leave crashes to the game's crash logger. Tracy's handler would otherwise
    # take the exception first.
    set(TRACY_NO_CRASH_HANDLER ON CACHE BOOL "" FORCE)
+   # No call stacks, so no symbol worker. In on-demand mode the client waits for
+   # that worker before it answers a profiler. The worker first loads symbols for
+   # every module in the game through DbgHelp: hundreds of DLLs, while Huginn's
+   # Tracy client uses the same non-thread-safe DbgHelp. Connections got as far
+   # as TCP and never got a handshake. Zones don't need call stacks, and
+   # sampling is process-wide, so Huginn's client can still capture it.
+   set(TRACY_NO_CALLSTACK ON CACHE BOOL "" FORCE)
    # Listen on this machine only. Discovery broadcasts then stay on loopback too,
    # so the profiler still finds the game without exposing it to the network.
    set(TRACY_ONLY_LOCALHOST ON CACHE BOOL "" FORCE)
