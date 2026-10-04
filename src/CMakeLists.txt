@@ -132,6 +132,12 @@ if(WHEELER_TRACY)
 
    add_subdirectory("${TRACY_DIR}" tracy EXCLUDE_FROM_ALL)
 
+   # Other SKSE plugins (Huginn) carry their own Tracy client, and the first one
+   # loaded takes the default port, 8086. A fixed port keeps Wheeler's client at
+   # the same address whatever the load order: connect to 127.0.0.1:8087.
+   # Tracy reads this when it builds the client, so it goes on TracyClient.
+   target_compile_definitions(TracyClient PRIVATE TRACY_DATA_PORT=8087)
+
    target_link_libraries("${PROJECT_NAME}" PRIVATE Tracy::TracyClient)
    target_compile_definitions("${PROJECT_NAME}" PRIVATE WHEELER_TRACY)
 endif()

@@ -23,8 +23,14 @@ v0.14.1). The network protocol changes between releases, and a mismatched
 profiler refuses to connect.
 
 1. Start the game with the Tracy build installed.
-2. Start the profiler. The game shows up in its discovery list on this machine,
-   or connect to `127.0.0.1`.
+2. In the profiler, connect to **`127.0.0.1:8087`**.
+
+Wheeler's client always uses port 8087. Other plugins with their own Tracy
+client, such as Huginn, take the default port 8086. A plain `127.0.0.1` or a
+`SkyrimSE.exe` entry on 8086 in the discovery list is the other plugin, not
+Wheeler. Type `127.0.0.1`, not `localhost`: `localhost` can resolve to the IPv6
+address `::1`, and Wheeler's client listens on IPv4 only. To profile both
+plugins, open a second profiler window for the other port.
 
 The client runs **on demand**: nothing is collected until the profiler connects,
 so the build can be left installed without buffering every frame from launch.
