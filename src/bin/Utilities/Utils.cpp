@@ -24,6 +24,7 @@ namespace Utils
       }
       void CleanSlot(RE::PlayerCharacter* a_pc, RE::BGSEquipSlot* a_slot)
       {
+      ZoneScoped;
       RE::ActorEquipManager* aem = RE::ActorEquipManager::GetSingleton();
       if (!aem) {
         return;

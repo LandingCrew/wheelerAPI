@@ -136,7 +136,11 @@ void Wheeler::Update(float a_deltaTime)
 {
    ZoneScoped;
    DeferredNotifications defer;  // declared first so it unwinds after `lock`
-   std::shared_lock<std::shared_mutex> lock(_wheelDataLock);
+   std::shared_lock<std::shared_mutex> lock(_wheelDataLock, std::defer_lock);
+   {
+      ZoneScopedN("Wheel lock wait");
+      lock.lock();
+   }
    using namespace Config::Styling::Wheel;
    if (!RE::PlayerCharacter::GetSingleton() || !RE::PlayerCharacter::GetSingleton()->Is3DLoaded()) {
       return;

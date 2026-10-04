@@ -63,6 +63,7 @@ bool WheelItemScroll::IsAvailable(RE::TESObjectREFR::InventoryItemMap& a_inv)
 
 void WheelItemScroll::ActivateItemSecondary()
 {
+   ZoneScoped;
    RE::PlayerCharacter* pc = RE::PlayerCharacter::GetSingleton();
    RE::ActorEquipManager* aeMan = RE::ActorEquipManager::GetSingleton();
    if (!pc || !aeMan) {
@@ -77,6 +78,7 @@ void WheelItemScroll::ActivateItemSecondary()
 
 void WheelItemScroll::ActivateItemPrimary()
 {
+   ZoneScoped;
    RE::PlayerCharacter* pc = RE::PlayerCharacter::GetSingleton();
    RE::ActorEquipManager* aeMan = RE::ActorEquipManager::GetSingleton();
    if (!pc || !aeMan) {

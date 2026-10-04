@@ -67,6 +67,7 @@ namespace WheelerAPI
       callback = s_itemActivatedCallback;
       }
       if (callback) {
+      ZoneScopedN("client callback");
       callback(wheelIndex, entryIndex, itemIndex, formID, isPrimary);
       }
    }
@@ -81,6 +82,7 @@ namespace WheelerAPI
       callback = s_editModeCallback;
       }
       if (callback) {
+      ZoneScopedN("client callback");
       callback(entered, changes, changeCount);
       }
    }
@@ -104,6 +106,7 @@ namespace WheelerAPI
       callback = s_wheelStateCallback;
       }
       if (callback) {
+      ZoneScopedN("client callback");
       callback(wheelIndex, isOpen);
       }
    }
@@ -172,21 +175,25 @@ namespace WheelerAPI
 
    static bool API_IsInitialized()
    {
+      ZoneScoped;
       return s_initialized.load(std::memory_order_acquire);
    }
 
    static bool API_IsInEditMode()
    {
+      ZoneScoped;
       return Wheeler::IsInEditMode();
    }
 
    static bool API_IsWheelOpen()
    {
+      ZoneScoped;
       return Wheeler::IsWheelerOpen();
    }
 
    static int32_t API_CreateManagedWheel(const WheelConfig* config)
    {
+      ZoneScoped;
       if (!s_initialized) {
       return static_cast<int32_t>(Result::NotInitialized);
       }
@@ -278,6 +285,7 @@ namespace WheelerAPI
 
    static Result API_DeleteManagedWheel(int32_t wheelIndex)
    {
+      ZoneScoped;
       if (!s_initialized) {
       return Result::NotInitialized;
       }
@@ -336,6 +344,7 @@ namespace WheelerAPI
    // Returns the number of wheels deleted (>= 0), or a negative Result on error.
    static int32_t API_DeleteManagedWheelsForClient(const char* clientName)
    {
+      ZoneScoped;
       if (!s_initialized) {
       return static_cast<int32_t>(Result::NotInitialized);
       }
@@ -394,6 +403,7 @@ namespace WheelerAPI
    // Result on error.
    static int32_t API_GetManagedWheelsForClient(const char* clientName, int32_t* outIndices, size_t maxCount)
    {
+      ZoneScoped;
       if (!s_initialized) {
       return static_cast<int32_t>(Result::NotInitialized);
       }
@@ -423,6 +433,7 @@ namespace WheelerAPI
 
    static bool API_IsManagedWheel(int32_t wheelIndex)
    {
+      ZoneScoped;
       // Public entry — external callers don't hold the wheel-data lock, so take it.
       std::shared_lock lock(Wheeler::GetWheelDataLock());
       return GetManagedInfoForIndex(wheelIndex) != nullptr;
@@ -430,12 +441,14 @@ namespace WheelerAPI
 
    static int32_t API_GetWheelCount()
    {
+      ZoneScoped;
       std::shared_lock lock(Wheeler::GetWheelDataLock());
       return Wheeler::GetWheelCount();
    }
 
    static int32_t API_GetActiveWheelIndex()
    {
+      ZoneScoped;
       // Pairs with the exclusive hold in API_SetActiveWheelIndex below. Reading
       // _activeWheelIdx unlocked races every writer of it — the API setter, the
       // input thread's NextWheel/PrevWheel, and the erase paths that settle it.
@@ -445,6 +458,7 @@ namespace WheelerAPI
 
    static Result API_SetActiveWheelIndex(int32_t index)
    {
+      ZoneScoped;
       if (!s_initialized) {
       return Result::NotInitialized;
       }
@@ -466,6 +480,7 @@ namespace WheelerAPI
 
    static bool API_IsWheelEmpty(int32_t wheelIndex)
    {
+      ZoneScoped;
       std::shared_lock lock(Wheeler::GetWheelDataLock());
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
@@ -476,6 +491,7 @@ namespace WheelerAPI
 
    static int32_t API_GetEntryCount(int32_t wheelIndex)
    {
+      ZoneScoped;
       std::shared_lock lock(Wheeler::GetWheelDataLock());
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
@@ -486,6 +502,7 @@ namespace WheelerAPI
 
    static int32_t API_AddEntry(int32_t wheelIndex)
    {
+      ZoneScoped;
       if (!s_initialized) {
       return static_cast<int32_t>(Result::NotInitialized);
       }
@@ -502,6 +519,7 @@ namespace WheelerAPI
 
    static Result API_DeleteEntry(int32_t wheelIndex, int32_t entryIndex)
    {
+      ZoneScoped;
       if (!s_initialized) {
       return Result::NotInitialized;
       }
@@ -520,6 +538,7 @@ namespace WheelerAPI
 
    static bool API_IsEntryEmpty(int32_t wheelIndex, int32_t entryIndex)
    {
+      ZoneScoped;
       std::shared_lock lock(Wheeler::GetWheelDataLock());
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
@@ -534,6 +553,7 @@ namespace WheelerAPI
 
    static int32_t API_GetItemCount(int32_t wheelIndex, int32_t entryIndex)
    {
+      ZoneScoped;
       std::shared_lock lock(Wheeler::GetWheelDataLock());
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
@@ -548,6 +568,7 @@ namespace WheelerAPI
 
    static int32_t API_AddItemByFormID(int32_t wheelIndex, int32_t entryIndex, uint32_t formID, uint16_t uniqueID)
    {
+      ZoneScoped;
       if (!s_initialized) {
       return static_cast<int32_t>(Result::NotInitialized);
       }
@@ -596,6 +617,7 @@ namespace WheelerAPI
 
    static Result API_RemoveItem(int32_t wheelIndex, int32_t entryIndex, int32_t itemIndex)
    {
+      ZoneScoped;
       if (!s_initialized) {
       return Result::NotInitialized;
       }
@@ -617,6 +639,7 @@ namespace WheelerAPI
 
    static Result API_ClearEntry(int32_t wheelIndex, int32_t entryIndex)
    {
+      ZoneScoped;
       if (!s_initialized) {
       return Result::NotInitialized;
       }
@@ -636,6 +659,7 @@ namespace WheelerAPI
 
    static uint32_t API_GetItemFormID(int32_t wheelIndex, int32_t entryIndex, int32_t itemIndex)
    {
+      ZoneScoped;
       std::shared_lock lock(Wheeler::GetWheelDataLock());
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
@@ -654,6 +678,7 @@ namespace WheelerAPI
 
    static int32_t API_GetSelectedItemIndex(int32_t wheelIndex, int32_t entryIndex)
    {
+      ZoneScoped;
       std::shared_lock lock(Wheeler::GetWheelDataLock());
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
@@ -668,6 +693,7 @@ namespace WheelerAPI
 
    static Result API_SetSelectedItemIndex(int32_t wheelIndex, int32_t entryIndex, int32_t itemIndex)
    {
+      ZoneScoped;
       if (!s_initialized) {
       return Result::NotInitialized;
       }
@@ -690,42 +716,49 @@ namespace WheelerAPI
 
    static void API_RegisterItemActivatedCallback(ItemActivatedCallback callback)
    {
+      ZoneScoped;
       std::lock_guard<std::mutex> lock(s_callbackLock);
       s_itemActivatedCallback = callback;
    }
 
    static void API_RegisterEditModeCallback(EditModeCallback callback)
    {
+      ZoneScoped;
       std::lock_guard<std::mutex> lock(s_callbackLock);
       s_editModeCallback = callback;
    }
 
    static void API_RegisterWheelStateCallback(WheelStateCallback callback)
    {
+      ZoneScoped;
       std::lock_guard<std::mutex> lock(s_callbackLock);
       s_wheelStateCallback = callback;
    }
 
    static void API_UnregisterItemActivatedCallback()
    {
+      ZoneScoped;
       std::lock_guard<std::mutex> lock(s_callbackLock);
       s_itemActivatedCallback = nullptr;
    }
 
    static void API_UnregisterEditModeCallback()
    {
+      ZoneScoped;
       std::lock_guard<std::mutex> lock(s_callbackLock);
       s_editModeCallback = nullptr;
    }
 
    static void API_UnregisterWheelStateCallback()
    {
+      ZoneScoped;
       std::lock_guard<std::mutex> lock(s_callbackLock);
       s_wheelStateCallback = nullptr;
    }
 
    static Result API_SetManagedWheelEntrySubtext(int32_t wheelIndex, int32_t entryIndex, const SubtextConfig* config)
    {
+      ZoneScoped;
       if (!s_initialized) {
       return Result::NotInitialized;
       }

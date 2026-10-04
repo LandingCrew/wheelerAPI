@@ -57,11 +57,13 @@ bool WheelItemAmmo::IsAvailable(RE::TESObjectREFR::InventoryItemMap& a_inv)
 
 void WheelItemAmmo::ActivateItemSecondary()
 {
+   ZoneScoped;
    toggleEquip();
 }
 
 void WheelItemAmmo::ActivateItemPrimary()
 {
+   ZoneScoped;
    toggleEquip();
 }
 

@@ -32,11 +32,13 @@ bool WheelItemMisc::IsAvailable(RE::TESObjectREFR::InventoryItemMap& a_inv)
 
 void WheelItemMisc::ActivateItemSecondary()
 {
+   ZoneScoped;
    this->useItem();
 }
 
 void WheelItemMisc::ActivateItemPrimary()
 {
+   ZoneScoped;
    this->useItem();
 }
 

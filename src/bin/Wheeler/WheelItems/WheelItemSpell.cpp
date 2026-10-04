@@ -114,6 +114,7 @@ bool WheelItemSpell::IsAvailable(RE::TESObjectREFR::InventoryItemMap& a_inv)
 
 void WheelItemSpell::ActivateItemSecondary()
 {
+   ZoneScoped;
    auto pc = RE::PlayerCharacter::GetSingleton();
    if (pc) {
       if (this->isPower()) {
@@ -142,6 +143,7 @@ void WheelItemSpell::ActivateItemSecondary()
 
 void WheelItemSpell::ActivateItemPrimary()
 {
+   ZoneScoped;
    auto pc = RE::PlayerCharacter::GetSingleton();
    if (pc) {
       // check if spell is already equiped, if it is, unequip.
@@ -172,6 +174,7 @@ void WheelItemSpell::ActivateItemPrimary()
 
 void WheelItemSpell::ActivateItemSpecial()
 {
+   ZoneScoped;
    return; // current don't do anything because I'm yet to figure out how to prevent the power from being casted when it shouldn't
    auto pc = RE::PlayerCharacter::GetSingleton();
    if (!pc) {

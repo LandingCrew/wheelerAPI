@@ -47,6 +47,7 @@ bool WheelItemShout::IsAvailable(RE::TESObjectREFR::InventoryItemMap& a_inv)
 //TODO: check if shout's been unlocked, block equipment if not unlocked.
 void WheelItemShout::ActivateItemSecondary()
 {
+   ZoneScoped;
    RE::PlayerCharacter* pc = RE::PlayerCharacter::GetSingleton();
    if (!pc) {
       return;
@@ -66,6 +67,7 @@ void WheelItemShout::ActivateItemSecondary()
 
 void WheelItemShout::ActivateItemPrimary()
 {
+   ZoneScoped;
    RE::PlayerCharacter* pc = RE::PlayerCharacter::GetSingleton();
    if (!pc) {
       return;
@@ -85,6 +87,7 @@ void WheelItemShout::ActivateItemPrimary()
 
 void WheelItemShout::ActivateItemSpecial()
 {
+   ZoneScoped;
 }
 
 

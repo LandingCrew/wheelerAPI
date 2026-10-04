@@ -117,11 +117,13 @@ WheelItemArmor::WheelItemArmor(RE::TESBoundObject* a_armor, uint16_t a_uniqueID)
 
 void WheelItemArmor::ActivateItemSecondary()
 {
+   ZoneScoped;
    toggleEquip();
 }
 
 void WheelItemArmor::ActivateItemPrimary()
 {
+   ZoneScoped;
    toggleEquip();
 }
 
@@ -164,6 +166,7 @@ void WheelItemArmor::equipArmor()
       return;
    }
    auto slot = this->_obj->As<RE::TESObjectARMO>()->GetEquipSlot();
+   ZoneScopedN("EquipObject");
    aeMan->EquipObject(pc, _obj, extraData, 1, slot);
 }
 

@@ -25,6 +25,7 @@ RE::FormID WheelItemMutable::GetFormID() const
 
 std::pair<int, RE::ExtraDataList*> WheelItemMutable::GetItemExtraDataAndCount(RE::TESObjectREFR::InventoryItemMap& a_inv)
 {
+   ZoneScoped;
    try {
       std::pair<int, RE::ExtraDataList*> ret = { 0, nullptr };
 

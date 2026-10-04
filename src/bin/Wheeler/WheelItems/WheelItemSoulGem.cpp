@@ -151,11 +151,13 @@ bool WheelItemSoulGem::IsAvailable(RE::TESObjectREFR::InventoryItemMap& a_inv)
 
 void WheelItemSoulGem::ActivateItemPrimary()
 {
+   ZoneScoped;
    this->rechargeEquippedWeapon();
 }
 
 void WheelItemSoulGem::ActivateItemSecondary()
 {
+   ZoneScoped;
    this->rechargeEquippedWeapon();
 }
 

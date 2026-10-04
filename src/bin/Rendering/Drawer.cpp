@@ -19,6 +19,7 @@ void Drawer::draw_text(float a_x,
       DrawArgs a_drawArgs,
       bool a_center_text)
 {
+   ZoneScoped;
    auto* font = ImGui::GetDefaultFont();  // TODO: add custom font support
 
 
@@ -181,6 +182,7 @@ void Drawer::draw_texture(ID3D11ShaderResourceView* a_texture,
    ImU32 a_color,
    DrawArgs a_drawArgs)
 {
+   ZoneScoped;
    a_center = ImVec2(a_center.x + a_offset_x, a_center.y + a_offset_y);
    const float cos_a = cosf(a_drawArgs.rotationOffset);
    const float sin_a = sinf(a_drawArgs.rotationOffset);

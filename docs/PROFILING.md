@@ -42,15 +42,19 @@ context-switch capture. Zones work without it.
 ## What is instrumented
 
 - **Frames:** one `FrameMark` per call of the D3D present hook.
-- **Per frame:** `Wheeler Present`, ImGui setup and render, `Wheeler::Update`,
-  `Utils::Inventory::GetInventory`, `Wheel::Draw`, and the per-entry background
-  and slot drawing.
+- **Per frame:** `Wheeler Present`, ImGui setup and render, `Wheeler::Update`
+  and its `Wheel lock wait`, `Utils::Inventory::GetInventory`, `Wheel::Draw`,
+  the per-entry background and slot drawing, `Drawer::draw_text` and
+  `Drawer::draw_texture`, and the weapon/armour inventory lookup
+  (`WheelItemMutable::GetItemExtraDataAndCount`).
 - **Input:** `Input::ProcessAndFilter`.
-- **Actions:** opening and closing the wheel, activating an entry, and reloading
-  wheels from the save.
-- **API:** each callback dispatched to client plugins (`NotifyItemActivated`,
-  `NotifyEditModeChanged`, `NotifyWheelStateChanged`). A slow callback shows up
-  here, not as Wheeler's own time.
+- **Actions:** opening and closing the wheel, activating an entry and each item
+  type's `ActivateItem*`, `EquipObject` for weapons and armour,
+  `Utils::Slot::CleanSlot`, and reloading wheels from the save.
+- **API:** every `API_*` entry point a client calls, and the dispatch of each
+  notification (`NotifyItemActivated`, `NotifyEditModeChanged`,
+  `NotifyWheelStateChanged`). The client's own code runs inside the
+  `client callback` zone, so its time is kept apart from Wheeler's.
 
 ## Adding zones
 

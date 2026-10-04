@@ -114,6 +114,7 @@ bool IsTwoHanded(RE::TESObjectWEAP* weapon)
 
 void WheelItemWeapon::ActivateItemSecondary()
 {
+   ZoneScoped;
    auto pc = RE::PlayerCharacter::GetSingleton();
    if (!pc) {
       return;
@@ -136,6 +137,7 @@ void WheelItemWeapon::ActivateItemSecondary()
 
 void WheelItemWeapon::ActivateItemPrimary()
 {
+   ZoneScoped;
    auto pc = RE::PlayerCharacter::GetSingleton();
    if (!pc) {
       return;
@@ -186,6 +188,7 @@ void WheelItemWeapon::equipItem(bool a_toRight)
       Utils::Slot::CleanSlot(pc, Utils::Slot::GetRightHandSlot());
       }
       auto slot = a_toRight ? Utils::Slot::GetRightHandSlot() : Utils::Slot::GetLeftHandSlot();
+      ZoneScopedN("EquipObject");
       RE::ActorEquipManager::GetSingleton()->EquipObject(pc, _obj, extraData, 1, slot);
    } catch (const std::exception& e) {
       logger::error("Error while equipping weapon: {}", e.what());
