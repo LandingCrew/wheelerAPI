@@ -29,20 +29,15 @@ namespace
    // What a hand is actually holding, taken straight off the actor's process
    // instead of searching the inventory for it.
    //
-   // A two-handed weapon lives in bothHands and is reported for neither hand slot,
-   // which is why GetEquippedObject(true) misses it entirely. It charges through
-   // the right-hand actor value, so it is reported here for the right hand only.
+   // Two-handed weapons, bows and crossbows are all held in rightHand, the same
+   // slot Utils::Inventory::GetWeaponEquippedHand reads to highlight them on the
+   // wheel. An earlier revision preferred middleHigh->bothHands whenever it was
+   // set, going by the field's name alone. With a bow in hand that field is set
+   // and does not hold the bow (most likely it is the equipped ammo), so the bow
+   // was never seen and every recharge reported "No enchanted weapon equipped."
    RE::InventoryEntryData* equippedEntry(RE::PlayerCharacter* a_pc, bool a_leftHand)
    {
-      auto* process = a_pc ? a_pc->GetActorRuntimeData().currentProcess : nullptr;
-      auto* middleHigh = process ? process->middleHigh : nullptr;
-      if (!middleHigh) {
-      return nullptr;
-      }
-      if (middleHigh->bothHands) {
-      return a_leftHand ? nullptr : middleHigh->bothHands;
-      }
-      return a_leftHand ? middleHigh->leftHand : middleHigh->rightHand;
+      return a_pc ? a_pc->GetEquippedEntryData(a_leftHand) : nullptr;
    }
 
    // Capacity of a player-applied enchantment, which lives on the worn stack's
@@ -84,10 +79,19 @@ namespace
    // is null and amountofEnchantment is 0, exactly as a plain weapon does -- and
    // carries it on the worn stack instead, so the form cannot be used to rule the
    // weapon out. Both cases now cost the same lookup.
+   //
+   // If the hand's entry is missing or is not a weapon, the equipped object is
+   // still asked for its form. That reads no inventory data and is enough for a
+   // base enchantment. A player enchantment can only come from the entry.
    float equippedWeaponCapacity(RE::PlayerCharacter* a_pc, bool a_leftHand)
    {
       RE::InventoryEntryData* entry = equippedEntry(a_pc, a_leftHand);
       auto* weapon = entry && entry->object ? entry->object->As<RE::TESObjectWEAP>() : nullptr;
+      if (!weapon) {
+      entry = nullptr;
+      RE::TESForm* equipped = a_pc ? a_pc->GetEquippedObject(a_leftHand) : nullptr;
+      weapon = equipped ? equipped->As<RE::TESObjectWEAP>() : nullptr;
+      }
       auto* enchantable = weapon ? weapon->As<RE::TESEnchantableForm>() : nullptr;
       if (!enchantable) {
       return 0.0f;
