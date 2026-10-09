@@ -4,9 +4,12 @@
 WheelItemScroll::WheelItemScroll(RE::ScrollItem* a_scroll)
 {
    this->_scroll = a_scroll;
-   RE::BSString descriptionBuf = "";
-   this->_scroll->GetDescription(descriptionBuf, nullptr);
-   this->_description = descriptionBuf;
+   {
+      ZoneScopedN("TESDescription::GetDescription");
+      RE::BSString descriptionBuf = "";
+      this->_scroll->GetDescription(descriptionBuf, nullptr);
+      this->_description = descriptionBuf;
+   }
    this->_texture = Texture::GetIconImage(Texture::icon_image_type::scroll, a_scroll);
 }
 

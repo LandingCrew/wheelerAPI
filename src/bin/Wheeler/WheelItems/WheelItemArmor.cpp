@@ -110,9 +110,12 @@ WheelItemArmor::WheelItemArmor(RE::TESBoundObject* a_armor, uint16_t a_uniqueID)
    _texture = Texture::GetIconImage(iconType, a_armor);
    _stat_texture = Texture::GetIconImage(Texture::icon_image_type::armor_default, nullptr);
    // get description
-   RE::BSString descriptionBuf = "";
-   armor->GetDescription(descriptionBuf, nullptr);
-   this->_description = descriptionBuf.c_str();
+   {
+      ZoneScopedN("TESDescription::GetDescription");
+      RE::BSString descriptionBuf = "";
+      armor->GetDescription(descriptionBuf, nullptr);
+      this->_description = descriptionBuf.c_str();
+   }
 }
 
 void WheelItemArmor::ActivateItemSecondary()

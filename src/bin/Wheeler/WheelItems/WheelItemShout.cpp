@@ -6,9 +6,12 @@ WheelItemShout::WheelItemShout(RE::TESShout* a_shout)
 {
    this->_shout = a_shout;
    this->_texture = Texture::GetIconImage(Texture::icon_image_type::shout, a_shout);
-   RE::BSString descriptionBuf = "";
-   this->_shout->GetDescription(descriptionBuf, nullptr);
-   this->_description = descriptionBuf.c_str();
+   {
+      ZoneScopedN("TESDescription::GetDescription");
+      RE::BSString descriptionBuf = "";
+      this->_shout->GetDescription(descriptionBuf, nullptr);
+      this->_description = descriptionBuf.c_str();
+   }
 }
 
 void WheelItemShout::DrawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs)

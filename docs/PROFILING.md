@@ -60,8 +60,11 @@ context-switch capture. Zones work without it.
 - **API:** every `API_*` entry point a client calls, with its wait for the
   wheel-data lock in `API lock wait (exclusive)` or `API lock wait (shared)`.
   Item construction for `AddItemByFormID` is in
-  `WheelItemFactory::MakeWheelItemFromFormID`, and the game-side description
-  build in `GetMagicItemDescription (ItemCard)`. Also the dispatch of each
+  `WheelItemFactory::MakeWheelItemFromFormID`. Inside it, the item's base
+  description text (`TESDescription::GetDescription`, which the game reads from
+  the plugin file), the game-side magic description
+  (`GetMagicItemDescription (ItemCard)`) and the custom icon lookup
+  (`GetIconImage (form)`) have zones of their own. Also the dispatch of each
   notification (`NotifyItemActivated`, `NotifyEditModeChanged`,
   `NotifyWheelStateChanged`). The client's own code runs inside the
   `client callback` zone, so its time is kept apart from Wheeler's.
