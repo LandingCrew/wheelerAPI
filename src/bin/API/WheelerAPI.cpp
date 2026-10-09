@@ -40,6 +40,23 @@ namespace WheelerAPI
    // Internal Helpers
    // ============================================================================
 
+   // The wheel-data lock as the API takes it. The wait for the lock gets its own
+   // Tracy zone, separate from the call's work. A client calling from a job thread
+   // can wait out the render thread's shared hold in Wheeler::Update, or an
+   // activation's exclusive hold while the game equips the item.
+   static std::unique_lock<std::shared_mutex> lockWheelsExclusive()
+   {
+      ZoneScopedN("API lock wait (exclusive)");
+      return std::unique_lock<std::shared_mutex>(Wheeler::GetWheelDataLock());
+   }
+
+   static std::shared_lock<std::shared_mutex> lockWheelsShared()
+   {
+      ZoneScopedN("API lock wait (shared)");
+      return std::shared_lock<std::shared_mutex>(Wheeler::GetWheelDataLock());
+   }
+
+
    void SetInitialized(bool initialized)
    {
       s_initialized.store(initialized, std::memory_order_release);
@@ -204,7 +221,7 @@ namespace WheelerAPI
       return static_cast<int32_t>(Result::InternalError);  // Must have at least 1 entry
       }
 
-      std::unique_lock wheelLock(Wheeler::GetWheelDataLock());
+      auto wheelLock = lockWheelsExclusive();
       auto& wheels = Wheeler::GetWheels();
 
       // Create wheel with empty entries
@@ -290,7 +307,7 @@ namespace WheelerAPI
       return Result::NotInitialized;
       }
 
-      std::unique_lock wheelLock(Wheeler::GetWheelDataLock());
+      auto wheelLock = lockWheelsExclusive();
       auto& wheels = Wheeler::GetWheels();
 
       if (wheelIndex < 0 || wheelIndex >= static_cast<int32_t>(wheels.size())) {
@@ -352,7 +369,7 @@ namespace WheelerAPI
       return static_cast<int32_t>(Result::InternalError);
       }
 
-      std::unique_lock wheelLock(Wheeler::GetWheelDataLock());
+      auto wheelLock = lockWheelsExclusive();
       auto& wheels = Wheeler::GetWheels();
 
       // Collect matching indices, then erase from the highest down so earlier
@@ -411,7 +428,7 @@ namespace WheelerAPI
       return static_cast<int32_t>(Result::InternalError);
       }
 
-      std::shared_lock wheelLock(Wheeler::GetWheelDataLock());
+      auto wheelLock = lockWheelsShared();
       auto& wheels = Wheeler::GetWheels();
 
       int32_t found = 0;
@@ -435,14 +452,14 @@ namespace WheelerAPI
    {
       ZoneScoped;
       // Public entry — external callers don't hold the wheel-data lock, so take it.
-      std::shared_lock lock(Wheeler::GetWheelDataLock());
+      auto lock = lockWheelsShared();
       return GetManagedInfoForIndex(wheelIndex) != nullptr;
    }
 
    static int32_t API_GetWheelCount()
    {
       ZoneScoped;
-      std::shared_lock lock(Wheeler::GetWheelDataLock());
+      auto lock = lockWheelsShared();
       return Wheeler::GetWheelCount();
    }
 
@@ -452,7 +469,7 @@ namespace WheelerAPI
       // Pairs with the exclusive hold in API_SetActiveWheelIndex below. Reading
       // _activeWheelIdx unlocked races every writer of it — the API setter, the
       // input thread's NextWheel/PrevWheel, and the erase paths that settle it.
-      std::shared_lock lock(Wheeler::GetWheelDataLock());
+      auto lock = lockWheelsShared();
       return Wheeler::GetActiveWheelIndex();
    }
 
@@ -469,7 +486,7 @@ namespace WheelerAPI
       // hold. It also has to cover the bounds check: under a shared lock another
       // thread could erase a wheel between GetWheelCount() and the write, leaving
       // the index past the end of the list.
-      std::unique_lock lock(Wheeler::GetWheelDataLock());
+      auto lock = lockWheelsExclusive();
       if (index < 0 || index >= Wheeler::GetWheelCount()) {
       return Result::InvalidWheelIndex;
       }
@@ -481,7 +498,7 @@ namespace WheelerAPI
    static bool API_IsWheelEmpty(int32_t wheelIndex)
    {
       ZoneScoped;
-      std::shared_lock lock(Wheeler::GetWheelDataLock());
+      auto lock = lockWheelsShared();
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
       return true;
@@ -492,7 +509,7 @@ namespace WheelerAPI
    static int32_t API_GetEntryCount(int32_t wheelIndex)
    {
       ZoneScoped;
-      std::shared_lock lock(Wheeler::GetWheelDataLock());
+      auto lock = lockWheelsShared();
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
       return static_cast<int32_t>(Result::InvalidWheelIndex);
@@ -507,7 +524,7 @@ namespace WheelerAPI
       return static_cast<int32_t>(Result::NotInitialized);
       }
 
-      std::unique_lock lock(Wheeler::GetWheelDataLock());
+      auto lock = lockWheelsExclusive();
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
       return static_cast<int32_t>(Result::InvalidWheelIndex);
@@ -524,7 +541,7 @@ namespace WheelerAPI
       return Result::NotInitialized;
       }
 
-      std::unique_lock lock(Wheeler::GetWheelDataLock());
+      auto lock = lockWheelsExclusive();
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
       return Result::InvalidWheelIndex;
@@ -539,7 +556,7 @@ namespace WheelerAPI
    static bool API_IsEntryEmpty(int32_t wheelIndex, int32_t entryIndex)
    {
       ZoneScoped;
-      std::shared_lock lock(Wheeler::GetWheelDataLock());
+      auto lock = lockWheelsShared();
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
       return true;
@@ -554,7 +571,7 @@ namespace WheelerAPI
    static int32_t API_GetItemCount(int32_t wheelIndex, int32_t entryIndex)
    {
       ZoneScoped;
-      std::shared_lock lock(Wheeler::GetWheelDataLock());
+      auto lock = lockWheelsShared();
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
       return static_cast<int32_t>(Result::InvalidWheelIndex);
@@ -599,7 +616,7 @@ namespace WheelerAPI
       return static_cast<int32_t>(Result::UnsupportedFormType);
       }
 
-      std::unique_lock lock(Wheeler::GetWheelDataLock());
+      auto lock = lockWheelsExclusive();
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
       return static_cast<int32_t>(Result::InvalidWheelIndex);
@@ -622,7 +639,7 @@ namespace WheelerAPI
       return Result::NotInitialized;
       }
 
-      std::unique_lock lock(Wheeler::GetWheelDataLock());
+      auto lock = lockWheelsExclusive();
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
       return Result::InvalidWheelIndex;
@@ -644,7 +661,7 @@ namespace WheelerAPI
       return Result::NotInitialized;
       }
 
-      std::unique_lock lock(Wheeler::GetWheelDataLock());
+      auto lock = lockWheelsExclusive();
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
       return Result::InvalidWheelIndex;
@@ -660,7 +677,7 @@ namespace WheelerAPI
    static uint32_t API_GetItemFormID(int32_t wheelIndex, int32_t entryIndex, int32_t itemIndex)
    {
       ZoneScoped;
-      std::shared_lock lock(Wheeler::GetWheelDataLock());
+      auto lock = lockWheelsShared();
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
       return 0;
@@ -679,7 +696,7 @@ namespace WheelerAPI
    static int32_t API_GetSelectedItemIndex(int32_t wheelIndex, int32_t entryIndex)
    {
       ZoneScoped;
-      std::shared_lock lock(Wheeler::GetWheelDataLock());
+      auto lock = lockWheelsShared();
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
       return static_cast<int32_t>(Result::InvalidWheelIndex);
@@ -698,7 +715,7 @@ namespace WheelerAPI
       return Result::NotInitialized;
       }
 
-      std::unique_lock lock(Wheeler::GetWheelDataLock());
+      auto lock = lockWheelsExclusive();
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
       return Result::InvalidWheelIndex;
@@ -770,7 +787,7 @@ namespace WheelerAPI
       // is serialized by the entry's own lock. Taking it exclusively would queue a
       // writer on every call and stall the render thread, and clients set captions
       // hundreds of times a session.
-      std::shared_lock lock(Wheeler::GetWheelDataLock());
+      auto lock = lockWheelsShared();
       Wheel* wheel = Wheeler::GetWheelByIndex(wheelIndex);
       if (!wheel) {
       return Result::InvalidWheelIndex;

@@ -57,7 +57,11 @@ context-switch capture. Zones work without it.
 - **Actions:** opening and closing the wheel, activating an entry and each item
   type's `ActivateItem*`, `EquipObject` for weapons and armour,
   `Utils::Slot::CleanSlot`, and reloading wheels from the save.
-- **API:** every `API_*` entry point a client calls, and the dispatch of each
+- **API:** every `API_*` entry point a client calls, with its wait for the
+  wheel-data lock in `API lock wait (exclusive)` or `API lock wait (shared)`.
+  Item construction for `AddItemByFormID` is in
+  `WheelItemFactory::MakeWheelItemFromFormID`, and the game-side description
+  build in `GetMagicItemDescription (ItemCard)`. Also the dispatch of each
   notification (`NotifyItemActivated`, `NotifyEditModeChanged`,
   `NotifyWheelStateChanged`). The client's own code runs inside the
   `client callback` zone, so its time is kept apart from Wheeler's.

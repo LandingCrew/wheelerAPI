@@ -358,6 +358,7 @@ static void stripMagicItemDescriptionFormatCode(std::string& a_description)
 /// </summary>
 void Utils::Magic::GetMagicItemDescription(RE::MagicItem* a_magicItem, std::string& a_buf)
 {
+   ZoneScopedN("GetMagicItemDescription (ItemCard)");
    RE::ItemCard card;
    RE::BSString buf;
    GetMagicItemDescription(&card, a_magicItem, buf);
