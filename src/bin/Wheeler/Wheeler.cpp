@@ -493,6 +493,7 @@ void Wheeler::OpenWheeler()
       }
       _state = Config::Animation::FadeTime > 0 ? WheelState::KOpening : WheelState::KOpened;
       _openTimer = 0;
+      WheelItem::InvalidateDescriptions();  // perks or enchantments may have changed since the last open
 #undef PlaySound
 
       RE::PlaySound(Config::Sound::SD_WHEELERTOGGLE);

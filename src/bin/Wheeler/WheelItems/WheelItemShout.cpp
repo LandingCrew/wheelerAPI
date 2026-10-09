@@ -6,12 +6,11 @@ WheelItemShout::WheelItemShout(RE::TESShout* a_shout)
 {
    this->_shout = a_shout;
    this->_texture = Texture::GetIconImage(Texture::icon_image_type::shout, a_shout);
-   {
-      ZoneScopedN("TESDescription::GetDescription");
-      RE::BSString descriptionBuf = "";
-      this->_shout->GetDescription(descriptionBuf, nullptr);
-      this->_description = descriptionBuf.c_str();
-   }
+}
+
+std::string WheelItemShout::buildDescription(RE::TESObjectREFR::InventoryItemMap& a_imap)
+{
+   return readBaseDescription(this->_shout);
 }
 
 void WheelItemShout::DrawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs)
@@ -24,8 +23,9 @@ void WheelItemShout::DrawHighlight(ImVec2 a_center, RE::TESObjectREFR::Inventory
 {
    this->drawHighlightText(a_center, this->_shout->GetName(), a_drawArgs);
    this->drawHighlightTexture(a_center, a_drawArgs);
-   if (!this->_description.empty()) {
-      this->drawHighlightDescription(a_center, this->_description.data(), a_drawArgs);
+   const std::string& description = this->getDescription(a_imap);
+   if (!description.empty()) {
+      this->drawHighlightDescription(a_center, description.data(), a_drawArgs);
    }
 }
 

@@ -17,6 +17,9 @@ public:
 
    static inline const char* ITEM_TYPE_STR = "WheelItemSpell";
 
+protected:
+   std::string buildDescription(RE::TESObjectREFR::InventoryItemMap& a_imap) override;
+
 private:
    bool isPower();
    RE::SpellItem* _spell = nullptr;

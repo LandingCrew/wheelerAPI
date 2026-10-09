@@ -4,13 +4,16 @@
 WheelItemScroll::WheelItemScroll(RE::ScrollItem* a_scroll)
 {
    this->_scroll = a_scroll;
-   {
-      ZoneScopedN("TESDescription::GetDescription");
-      RE::BSString descriptionBuf = "";
-      this->_scroll->GetDescription(descriptionBuf, nullptr);
-      this->_description = descriptionBuf;
-   }
    this->_texture = Texture::GetIconImage(Texture::icon_image_type::scroll, a_scroll);
+}
+
+std::string WheelItemScroll::buildDescription(RE::TESObjectREFR::InventoryItemMap& a_imap)
+{
+   std::string description = readBaseDescription(this->_scroll);
+   if (description.empty()) {
+      Utils::Magic::GetMagicItemDescription(this->_scroll, description);
+   }
+   return description;
 }
 
 void WheelItemScroll::DrawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs)
@@ -29,13 +32,7 @@ void WheelItemScroll::DrawHighlight(ImVec2 a_center, RE::TESObjectREFR::Inventor
    this->drawHighlightText(a_center, Utils::SafeGetName(this->_scroll, "Consumed Scroll"), a_drawArgs);
    this->drawHighlightTexture(a_center, a_drawArgs);
 
-   std::string descriptionBuf = "";
-   descriptionBuf = this->_description;
-   if (descriptionBuf.empty()) {
-      Utils::Magic::GetMagicItemDescription(this->_scroll, descriptionBuf);
-   }
-   
-   this->drawHighlightDescription(a_center, descriptionBuf.data(), a_drawArgs);
+   this->drawHighlightDescription(a_center, this->getDescription(a_imap).data(), a_drawArgs);
 }
 
 bool WheelItemScroll::IsActive(RE::TESObjectREFR::InventoryItemMap& a_inv)

@@ -60,6 +60,27 @@ void WheelItem::drawItemHighlightStatIconAndValue(ImVec2 a_center, Texture::Imag
       a_drawArgs);
 }
 
+const std::string& WheelItem::getDescription(RE::TESObjectREFR::InventoryItemMap& a_imap)
+{
+   const std::uint32_t generation = _descriptionGeneration.load(std::memory_order_relaxed);
+   if (_descriptionBuiltAt != generation && canBuildDescription(a_imap)) {
+      ZoneScopedN("WheelItem::buildDescription");
+      _description = buildDescription(a_imap);
+      _descriptionBuiltAt = generation;
+   }
+   return _description;
+}
+
+std::string WheelItem::readBaseDescription(RE::TESDescription* a_form)
+{
+   ZoneScopedN("TESDescription::GetDescription");
+   RE::BSString buf = "";
+   if (a_form) {
+      a_form->GetDescription(buf, nullptr);
+   }
+   return buf.c_str();
+}
+
 void WheelItem::drawHighlightDescription(ImVec2 a_center, const char* a_text, DrawArgs a_drawArgs)
 {
    std::string buf = std::string(a_text);
