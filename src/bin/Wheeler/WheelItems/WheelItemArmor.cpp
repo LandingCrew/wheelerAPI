@@ -25,20 +25,7 @@ void WheelItemArmor::DrawHighlight(ImVec2 a_center, RE::TESObjectREFR::Inventory
       invData = a_imap.find(armor)->second.second.get();
    }
    
-   std::string descriptionBuf = "";
-   // first check if description is empty, if not we just show the description itself, armor's sepcial description is probably more important.
-   if (!this->_description.empty()) {  // non-empty description, armor's main description takes priority(it's probably a special armor)
-      descriptionBuf = this->_description;
-   } else if (invData != nullptr) {
-      // try to get enchant of this armor
-      std::vector<RE::EnchantmentItem*> enchants;
-      this->GetItemEnchantment(invData, enchants);
-      if (!enchants.empty()) {
-      // take 1st item for now.
-      Utils::Magic::GetMagicItemDescription(enchants[0], descriptionBuf);
-      }
-   }
-   this->drawHighlightDescription(a_center, descriptionBuf.data(), a_drawArgs);
+   this->drawHighlightDescription(a_center, this->getDescription(a_imap).data(), a_drawArgs);
 
    // draw armor rating
    float armorRating = 0;
@@ -109,13 +96,23 @@ WheelItemArmor::WheelItemArmor(RE::TESBoundObject* a_armor, uint16_t a_uniqueID)
 
    _texture = Texture::GetIconImage(iconType, a_armor);
    _stat_texture = Texture::GetIconImage(Texture::icon_image_type::armor_default, nullptr);
-   // get description
-   {
-      ZoneScopedN("TESDescription::GetDescription");
-      RE::BSString descriptionBuf = "";
-      armor->GetDescription(descriptionBuf, nullptr);
-      this->_description = descriptionBuf.c_str();
+}
+
+std::string WheelItemArmor::buildDescription(RE::TESObjectREFR::InventoryItemMap& a_imap)
+{
+   // first check if description is empty, if not we just show the description itself, armor's sepcial description is probably more important.
+   RE::TESObjectARMO* armor = this->_obj->As<RE::TESObjectARMO>();
+   std::string description = readBaseDescription(armor);
+   if (description.empty() && a_imap.contains(armor)) {
+      // try to get enchant of this armor
+      std::vector<RE::EnchantmentItem*> enchants;
+      this->GetItemEnchantment(a_imap.find(armor)->second.second.get(), enchants);
+      if (!enchants.empty()) {
+      // take 1st item for now.
+      Utils::Magic::GetMagicItemDescription(enchants[0], description);
+      }
    }
+   return description;
 }
 
 void WheelItemArmor::ActivateItemSecondary()

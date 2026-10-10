@@ -51,12 +51,15 @@ WheelItemSpell::WheelItemSpell(RE::SpellItem* a_spell)
       }
    }
    this->_texture = Texture::GetIconImage(iconType, a_spell);
-   {
-      ZoneScopedN("TESDescription::GetDescription");
-      RE::BSString descriptionBuf = "";
-      this->_spell->GetDescription(descriptionBuf, nullptr);
-      this->_description = descriptionBuf.c_str();
+}
+
+std::string WheelItemSpell::buildDescription(RE::TESObjectREFR::InventoryItemMap& a_imap)
+{
+   std::string description = readBaseDescription(this->_spell);
+   if (description.empty()) {  // get description of magic effect only if the original description is empty
+      Utils::Magic::GetMagicItemDescription(this->_spell, description);
    }
+   return description;
 }
 
 void WheelItemSpell::DrawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs)
@@ -70,12 +73,7 @@ void WheelItemSpell::DrawHighlight(ImVec2 a_center, RE::TESObjectREFR::Inventory
    this->drawHighlightText(a_center, this->_spell->GetName(), a_drawArgs);
    this->drawHighlightTexture(a_center, a_drawArgs);
    
-   std::string descriptionBuf = "";
-   descriptionBuf = this->_description;
-   
-   if (descriptionBuf.empty()) { // get description of magic effect only if the original description is empty
-      Utils::Magic::GetMagicItemDescription(_spell, descriptionBuf);
-   }
+   const std::string& descriptionBuf = this->getDescription(a_imap);
    if (!descriptionBuf.empty()) {
       this->drawHighlightDescription(a_center, descriptionBuf.data(), a_drawArgs);
    }

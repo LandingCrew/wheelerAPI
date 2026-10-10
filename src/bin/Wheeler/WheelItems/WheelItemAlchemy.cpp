@@ -59,7 +59,20 @@ WheelItemAlchemy::WheelItemAlchemy(RE::AlchemyItem* a_alchemyItem)
       }
    }
    this->_texture = Texture::GetIconImage(iconType, this->_alchemyItem);
-   Utils::Magic::GetMagicItemDescription(_alchemyItem, this->_description);
+}
+
+bool WheelItemAlchemy::canBuildDescription(RE::TESObjectREFR::InventoryItemMap& a_imap)
+{
+   // A custom potion's form can be left dangling once the last one is consumed
+   // (see Utils::SafeGetName), so only describe it while the player still has one.
+   return !this->_alchemyItem->IsDynamicForm() || a_imap.contains(this->_alchemyItem);
+}
+
+std::string WheelItemAlchemy::buildDescription(RE::TESObjectREFR::InventoryItemMap& a_imap)
+{
+   std::string description;
+   Utils::Magic::GetMagicItemDescription(this->_alchemyItem, description);
+   return description;
 }
 
 void WheelItemAlchemy::DrawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs)
@@ -76,8 +89,9 @@ void WheelItemAlchemy::DrawHighlight(ImVec2 a_center, RE::TESObjectREFR::Invento
 {   
    this->drawHighlightText(a_center, Utils::SafeGetName(_alchemyItem, "Consumed Item"), a_drawArgs);
    this->drawHighlightTexture(a_center, a_drawArgs);
-   if (!this->_description.empty()) {
-      this->drawHighlightDescription(a_center, this->_description.data(), a_drawArgs);
+   const std::string& description = this->getDescription(a_imap);
+   if (!description.empty()) {
+      this->drawHighlightDescription(a_center, description.data(), a_drawArgs);
    }
 }
 

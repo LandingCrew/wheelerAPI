@@ -23,6 +23,9 @@ public:
 
    static inline const char* ITEM_TYPE_STR = "WheelItemArmor";
 
+protected:
+   std::string buildDescription(RE::TESObjectREFR::InventoryItemMap& a_imap) override;
+
 private:
    void toggleEquip();
    void equipArmor();

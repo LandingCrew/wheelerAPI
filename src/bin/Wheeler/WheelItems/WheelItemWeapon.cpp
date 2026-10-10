@@ -23,20 +23,7 @@ void WheelItemWeapon::DrawHighlight(ImVec2 a_center, RE::TESObjectREFR::Inventor
       invData = a_imap.find(this->_obj)->second.second.get();
    }
 
-   std::string descriptionBuf = "";
-   // first check if description is empty, if not we just show the description itself, weapon's sepcial description is probably more important.
-   if (!this->_description.empty()) {  // non-empty description, weapon's main description takes priority(it's probably a special weapon)
-      descriptionBuf = this->_description;
-   } else {
-      // try to get enchant of this weapon
-      std::vector<RE::EnchantmentItem*> enchants;
-      this->GetItemEnchantment(invData, enchants);
-      if (!enchants.empty()) {
-      // take 1st item for now.
-      Utils::Magic::GetMagicItemDescription(enchants[0], descriptionBuf);
-      }
-   }
-   
+   const std::string& descriptionBuf = this->getDescription(a_imap);
    if (!descriptionBuf.empty()) {
       this->drawHighlightDescription(a_center, descriptionBuf.data(), a_drawArgs);
    }
@@ -98,13 +85,26 @@ WheelItemWeapon::WheelItemWeapon(RE::TESBoundObject* a_weapon, uint16_t a_unique
    }
    _texture = Texture::GetIconImage(iconType, a_weapon);
    _stat_texture = Texture::GetIconImage(Texture::icon_image_type::weapon_damage, nullptr);
+}
 
-   {
-      ZoneScopedN("TESDescription::GetDescription");
-      RE::BSString descriptionBuf = "";
-      a_weapon->As<RE::TESObjectWEAP>()->GetDescription(descriptionBuf, nullptr);
-      this->_description = descriptionBuf.c_str();
+std::string WheelItemWeapon::buildDescription(RE::TESObjectREFR::InventoryItemMap& a_imap)
+{
+   // first check if description is empty, if not we just show the description itself, weapon's sepcial description is probably more important.
+   std::string description = readBaseDescription(this->_obj->As<RE::TESObjectWEAP>());
+   if (description.empty()) {
+      RE::InventoryEntryData* invData = nullptr;
+      if (a_imap.contains(this->_obj)) {
+      invData = a_imap.find(this->_obj)->second.second.get();
+      }
+      // try to get enchant of this weapon
+      std::vector<RE::EnchantmentItem*> enchants;
+      this->GetItemEnchantment(invData, enchants);
+      if (!enchants.empty()) {
+      // take 1st item for now.
+      Utils::Magic::GetMagicItemDescription(enchants[0], description);
+      }
    }
+   return description;
 }
 
 bool IsTwoHanded(RE::TESObjectWEAP* weapon)

@@ -24,6 +24,10 @@ public:
 
    static inline const char* ITEM_TYPE_STR = "WheelItemAlchemy";
 
+protected:
+   std::string buildDescription(RE::TESObjectREFR::InventoryItemMap& a_imap) override;
+   bool canBuildDescription(RE::TESObjectREFR::InventoryItemMap& a_imap) override;
+
 private:
    enum class WheelItemAlchemyType
    {

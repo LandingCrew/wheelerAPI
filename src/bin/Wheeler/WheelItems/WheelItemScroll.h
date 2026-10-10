@@ -18,6 +18,9 @@ public:
 
    static inline const char* ITEM_TYPE_STR = "WheelItemScroll";
 
+protected:
+   std::string buildDescription(RE::TESObjectREFR::InventoryItemMap& a_imap) override;
+
 private:
    RE::ScrollItem* _scroll = nullptr;
 };

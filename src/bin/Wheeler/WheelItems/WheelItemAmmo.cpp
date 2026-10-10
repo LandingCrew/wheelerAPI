@@ -9,12 +9,11 @@ WheelItemAmmo::WheelItemAmmo(RE::TESAmmo* a_ammo)
    // load texture
    this->_texture = Texture::GetIconImage(Texture::icon_image_type::arrow, a_ammo);
    this->_stat_texture = Texture::GetIconImage(Texture::icon_image_type::weapon_damage, nullptr);
-   {
-      ZoneScopedN("TESDescription::GetDescription");
-      RE::BSString descriptionBuf = "";
-      a_ammo->GetDescription(descriptionBuf, nullptr);
-      this->_description = std::string(descriptionBuf.c_str());
-   }
+}
+
+std::string WheelItemAmmo::buildDescription(RE::TESObjectREFR::InventoryItemMap& a_imap)
+{
+   return readBaseDescription(this->_ammo);
 }
 
 void WheelItemAmmo::DrawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs)
@@ -29,8 +28,9 @@ void WheelItemAmmo::DrawHighlight(ImVec2 a_center, RE::TESObjectREFR::InventoryI
 {
    this->drawHighlightText(a_center, Utils::SafeGetName(_ammo), a_drawArgs);
    this->drawHighlightTexture(a_center, a_drawArgs);
-   if (!this->_description.empty()) {
-      this->drawHighlightDescription(a_center, this->_description.data(), a_drawArgs);
+   const std::string& description = this->getDescription(a_imap);
+   if (!description.empty()) {
+      this->drawHighlightDescription(a_center, description.data(), a_drawArgs);
    }
    float ammoDamage = 0;
 

@@ -133,8 +133,9 @@ void WheelItemSoulGem::DrawHighlight(ImVec2 a_center, RE::TESObjectREFR::Invento
 {
    this->drawHighlightText(a_center, Utils::SafeGetName(this->_soulGem, "Soul Gem"), a_drawArgs);
    this->drawHighlightTexture(a_center, a_drawArgs);
-   if (!this->_description.empty()) {
-      this->drawHighlightDescription(a_center, this->_description.data(), a_drawArgs);
+   const std::string& description = this->getDescription(a_imap);
+   if (!description.empty()) {
+      this->drawHighlightDescription(a_center, description.data(), a_drawArgs);
    }
 }
 

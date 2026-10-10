@@ -25,6 +25,9 @@ public:
 
    static inline const char* ITEM_TYPE_STR = "WheelItemWeapon";
 
+protected:
+   std::string buildDescription(RE::TESObjectREFR::InventoryItemMap& a_imap) override;
+
 private:
    void equipItem(bool a_toRight = true);
    void unequipItem(const RE::BGSEquipSlot* a_slot);
