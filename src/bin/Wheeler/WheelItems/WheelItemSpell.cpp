@@ -51,9 +51,12 @@ WheelItemSpell::WheelItemSpell(RE::SpellItem* a_spell)
       }
    }
    this->_texture = Texture::GetIconImage(iconType, a_spell);
-   RE::BSString descriptionBuf = "";
-   this->_spell->GetDescription(descriptionBuf, nullptr);
-   this->_description = descriptionBuf.c_str();
+   {
+      ZoneScopedN("TESDescription::GetDescription");
+      RE::BSString descriptionBuf = "";
+      this->_spell->GetDescription(descriptionBuf, nullptr);
+      this->_description = descriptionBuf.c_str();
+   }
 }
 
 void WheelItemSpell::DrawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs)
@@ -114,6 +117,7 @@ bool WheelItemSpell::IsAvailable(RE::TESObjectREFR::InventoryItemMap& a_inv)
 
 void WheelItemSpell::ActivateItemSecondary()
 {
+   ZoneScoped;
    auto pc = RE::PlayerCharacter::GetSingleton();
    if (pc) {
       if (this->isPower()) {
@@ -142,6 +146,7 @@ void WheelItemSpell::ActivateItemSecondary()
 
 void WheelItemSpell::ActivateItemPrimary()
 {
+   ZoneScoped;
    auto pc = RE::PlayerCharacter::GetSingleton();
    if (pc) {
       // check if spell is already equiped, if it is, unequip.
@@ -172,6 +177,7 @@ void WheelItemSpell::ActivateItemPrimary()
 
 void WheelItemSpell::ActivateItemSpecial()
 {
+   ZoneScoped;
    return; // current don't do anything because I'm yet to figure out how to prevent the power from being casted when it shouldn't
    auto pc = RE::PlayerCharacter::GetSingleton();
    if (!pc) {

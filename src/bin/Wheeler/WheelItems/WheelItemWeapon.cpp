@@ -99,9 +99,12 @@ WheelItemWeapon::WheelItemWeapon(RE::TESBoundObject* a_weapon, uint16_t a_unique
    _texture = Texture::GetIconImage(iconType, a_weapon);
    _stat_texture = Texture::GetIconImage(Texture::icon_image_type::weapon_damage, nullptr);
 
-   RE::BSString descriptionBuf = "";
-   a_weapon->As<RE::TESObjectWEAP>()->GetDescription(descriptionBuf, nullptr);
-   this->_description = descriptionBuf.c_str();
+   {
+      ZoneScopedN("TESDescription::GetDescription");
+      RE::BSString descriptionBuf = "";
+      a_weapon->As<RE::TESObjectWEAP>()->GetDescription(descriptionBuf, nullptr);
+      this->_description = descriptionBuf.c_str();
+   }
 }
 
 bool IsTwoHanded(RE::TESObjectWEAP* weapon)
@@ -114,6 +117,7 @@ bool IsTwoHanded(RE::TESObjectWEAP* weapon)
 
 void WheelItemWeapon::ActivateItemSecondary()
 {
+   ZoneScoped;
    auto pc = RE::PlayerCharacter::GetSingleton();
    if (!pc) {
       return;
@@ -136,6 +140,7 @@ void WheelItemWeapon::ActivateItemSecondary()
 
 void WheelItemWeapon::ActivateItemPrimary()
 {
+   ZoneScoped;
    auto pc = RE::PlayerCharacter::GetSingleton();
    if (!pc) {
       return;
@@ -186,6 +191,7 @@ void WheelItemWeapon::equipItem(bool a_toRight)
       Utils::Slot::CleanSlot(pc, Utils::Slot::GetRightHandSlot());
       }
       auto slot = a_toRight ? Utils::Slot::GetRightHandSlot() : Utils::Slot::GetLeftHandSlot();
+      ZoneScopedN("EquipObject");
       RE::ActorEquipManager::GetSingleton()->EquipObject(pc, _obj, extraData, 1, slot);
    } catch (const std::exception& e) {
       logger::error("Error while equipping weapon: {}", e.what());

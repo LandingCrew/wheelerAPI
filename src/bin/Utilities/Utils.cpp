@@ -24,6 +24,7 @@ namespace Utils
       }
       void CleanSlot(RE::PlayerCharacter* a_pc, RE::BGSEquipSlot* a_slot)
       {
+      ZoneScoped;
       RE::ActorEquipManager* aem = RE::ActorEquipManager::GetSingleton();
       if (!aem) {
         return;
@@ -93,6 +94,7 @@ namespace Utils
       // Here a repeat is folded into the first: counts summed, extraDataLists pooled.
       RE::TESObjectREFR::InventoryItemMap GetInventory(RE::TESObjectREFR* a_refr)
       {
+      ZoneScoped;
       RE::TESObjectREFR::InventoryItemMap results;
       if (!a_refr) {
         return results;
@@ -356,6 +358,7 @@ static void stripMagicItemDescriptionFormatCode(std::string& a_description)
 /// </summary>
 void Utils::Magic::GetMagicItemDescription(RE::MagicItem* a_magicItem, std::string& a_buf)
 {
+   ZoneScopedN("GetMagicItemDescription (ItemCard)");
    RE::ItemCard card;
    RE::BSString buf;
    GetMagicItemDescription(&card, a_magicItem, buf);

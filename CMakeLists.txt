@@ -26,6 +26,7 @@ option(COPY_OUTPUT "Copy the output of build operations to the game directory" O
 option(ENABLE_SKYRIM_SE "Enable support for Skyrim SE in the dynamic runtime feature." ON)
 option(ENABLE_SKYRIM_AE "Enable support for Skyrim AE in the dynamic runtime feature." ON)
 option(ENABLE_SKYRIM_VR "Enable support for Skyrim VR in the dynamic runtime feature." OFF)
+option(WHEELER_TRACY "Build with Tracy profiler instrumentation (needs the extern/tracy submodule)." OFF)
 set(BUILD_TESTS OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")

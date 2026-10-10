@@ -100,6 +100,7 @@ bool WheelItemAlchemy::IsAvailable(RE::TESObjectREFR::InventoryItemMap& a_inv)
 
 void WheelItemAlchemy::ActivateItemPrimary()
 {
+   ZoneScoped;
    switch (this->_alchemyItemType) {
    case WheelItemAlchemyType::kPotion:
    case WheelItemAlchemyType::kFood:
@@ -113,6 +114,7 @@ void WheelItemAlchemy::ActivateItemPrimary()
 
 void WheelItemAlchemy::ActivateItemSecondary()
 {
+   ZoneScoped;
    switch (this->_alchemyItemType) {
    case WheelItemAlchemyType::kPotion:
    case WheelItemAlchemyType::kFood:
@@ -126,6 +128,7 @@ void WheelItemAlchemy::ActivateItemSecondary()
 
 void WheelItemAlchemy::ActivateItemSpecial()
 {
+   ZoneScoped;
    return;
 }
 

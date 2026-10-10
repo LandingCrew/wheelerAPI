@@ -4,9 +4,12 @@
 WheelItemScroll::WheelItemScroll(RE::ScrollItem* a_scroll)
 {
    this->_scroll = a_scroll;
-   RE::BSString descriptionBuf = "";
-   this->_scroll->GetDescription(descriptionBuf, nullptr);
-   this->_description = descriptionBuf;
+   {
+      ZoneScopedN("TESDescription::GetDescription");
+      RE::BSString descriptionBuf = "";
+      this->_scroll->GetDescription(descriptionBuf, nullptr);
+      this->_description = descriptionBuf;
+   }
    this->_texture = Texture::GetIconImage(Texture::icon_image_type::scroll, a_scroll);
 }
 
@@ -63,6 +66,7 @@ bool WheelItemScroll::IsAvailable(RE::TESObjectREFR::InventoryItemMap& a_inv)
 
 void WheelItemScroll::ActivateItemSecondary()
 {
+   ZoneScoped;
    RE::PlayerCharacter* pc = RE::PlayerCharacter::GetSingleton();
    RE::ActorEquipManager* aeMan = RE::ActorEquipManager::GetSingleton();
    if (!pc || !aeMan) {
@@ -77,6 +81,7 @@ void WheelItemScroll::ActivateItemSecondary()
 
 void WheelItemScroll::ActivateItemPrimary()
 {
+   ZoneScoped;
    RE::PlayerCharacter* pc = RE::PlayerCharacter::GetSingleton();
    RE::ActorEquipManager* aeMan = RE::ActorEquipManager::GetSingleton();
    if (!pc || !aeMan) {

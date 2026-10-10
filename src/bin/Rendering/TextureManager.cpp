@@ -20,6 +20,9 @@ Texture::Image Texture::GetIconImage(icon_image_type a_imageType, RE::TESForm* a
 {
    // look for formId matches
    if (a_form) {
+      // Only form lookups are zoned: the per-frame background and indicator
+      // lookups pass no form and return straight from icon_struct.
+      ZoneScopedN("GetIconImage (form)");
       if (icon_struct_formID.contains(a_form->GetFormID())) {
       return icon_struct_formID[a_form->GetFormID()];
       }

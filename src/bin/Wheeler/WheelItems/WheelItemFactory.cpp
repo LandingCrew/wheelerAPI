@@ -281,6 +281,7 @@ std::shared_ptr<WheelItem> WheelItemFactory::MakeWheelItemFromJsonObject(nlohman
 
 std::shared_ptr<WheelItem> WheelItemFactory::MakeWheelItemFromFormID(RE::FormID a_formID, uint16_t a_uniqueID)
 {
+   ZoneScoped;
    RE::TESForm* form = RE::TESForm::LookupByID(a_formID);
    if (!form) {
       return nullptr;

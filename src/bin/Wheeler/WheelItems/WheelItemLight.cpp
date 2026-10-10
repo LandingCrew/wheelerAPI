@@ -41,11 +41,13 @@ bool WheelItemLight::IsAvailable(RE::TESObjectREFR::InventoryItemMap& a_inv)
 
 void WheelItemLight::ActivateItemSecondary()
 {
+   ZoneScoped;
    toggleEquip();
 }
 
 void WheelItemLight::ActivateItemPrimary()
 {
+   ZoneScoped;
    toggleEquip();
 }
 

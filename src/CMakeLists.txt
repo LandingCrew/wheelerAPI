@@ -110,6 +110,45 @@ target_link_libraries(
       Freetype::Freetype
 )
 
+# Tracy profiler client, statically linked into the plugin. Off by default, so a
+# normal build needs neither the submodule nor the client. Profiling.h turns the
+# zone macros into nothing when it is off.
+if(WHEELER_TRACY)
+   set(TRACY_DIR "${ROOT_DIR}/extern/tracy")
+   if(NOT EXISTS "${TRACY_DIR}/CMakeLists.txt")
+      message(FATAL_ERROR "WHEELER_TRACY is ON but extern/tracy is empty. Run: git submodule update --init extern/tracy")
+   endif()
+
+   set(TRACY_ENABLE ON CACHE BOOL "" FORCE)
+   # Collect only while the Tracy profiler is connected, so a Tracy build can be
+   # left installed without buffering every frame from game start.
+   set(TRACY_ON_DEMAND ON CACHE BOOL "" FORCE)
+   # Leave crashes to the game's crash logger. Tracy's handler would otherwise
+   # take the exception first.
+   set(TRACY_NO_CRASH_HANDLER ON CACHE BOOL "" FORCE)
+   # No call stacks, so no symbol worker. In on-demand mode the client waits for
+   # that worker before it answers a profiler. The worker first loads symbols for
+   # every module in the game through DbgHelp: hundreds of DLLs, while Huginn's
+   # Tracy client uses the same non-thread-safe DbgHelp. Connections got as far
+   # as TCP and never got a handshake. Zones don't need call stacks, and
+   # sampling is process-wide, so Huginn's client can still capture it.
+   set(TRACY_NO_CALLSTACK ON CACHE BOOL "" FORCE)
+   # Listen on this machine only. Discovery broadcasts then stay on loopback too,
+   # so the profiler still finds the game without exposing it to the network.
+   set(TRACY_ONLY_LOCALHOST ON CACHE BOOL "" FORCE)
+
+   add_subdirectory("${TRACY_DIR}" tracy EXCLUDE_FROM_ALL)
+
+   # Other SKSE plugins (Huginn) carry their own Tracy client, and the first one
+   # loaded takes the default port, 8086. A fixed port keeps Wheeler's client at
+   # the same address whatever the load order: connect to 127.0.0.1:8087.
+   # Tracy reads this when it builds the client, so it goes on TracyClient.
+   target_compile_definitions(TracyClient PRIVATE TRACY_DATA_PORT=8087)
+
+   target_link_libraries("${PROJECT_NAME}" PRIVATE Tracy::TracyClient)
+   target_compile_definitions("${PROJECT_NAME}" PRIVATE WHEELER_TRACY)
+endif()
+
 target_precompile_headers(
    "${PROJECT_NAME}"
    PRIVATE

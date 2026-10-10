@@ -58,6 +58,7 @@ namespace std
     } while (0)
 
 #include "Plugin.h"
+#include "bin/Utilities/Profiling.h"
 #include <d3d11.h>
 #include <dxgi.h>
 #include "imgui.h"
